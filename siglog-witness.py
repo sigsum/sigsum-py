@@ -31,10 +31,11 @@ SIGKEY_FILE_DEFAULT = CONFIG_DIR_DEFAULT + 'signing_key'
 CONFIG_FILE = CONFIG_DIR_DEFAULT + 'siglog-witness.conf'
 
 ERR_TREEHEAD_SIGNATURE_INVALID = 2
-ERR_CONSISTENCYPROOF_FETCH     = 4
-ERR_CONSISTENCYPROOF_INVALID   = 5
-ERR_TREEHEAD_FETCH             = 6
-ERR_LOGKEYFILE                 = 7
+ERR_TREEHEAD_READ              = 3
+ERR_TREEHEAD_FETCH             = 4
+ERR_CONSISTENCYPROOF_FETCH     = 5
+ERR_CONSISTENCYPROOF_INVALID   = 6
+ERR_LOGKEY                     = 7
 ERR_LOGKEY_FORMAT              = 8
 ERR_SIGKEYFILE_TYPE            = 9
 ERR_SIGKEYFILE_MODE            = 10
@@ -170,30 +171,42 @@ def make_base_dir_maybe():
     except FileNotFoundError:
         os.makedirs(dirname, mode=0o700)
 
-def read_tree_head():
-    filename = os.path.expanduser(g_args.base_dir) + 'signed_tree_head'
+def read_tree_head(filename):
     try:
         with open(filename, mode='r') as f:
             return TreeHead(f.read())
     except FileNotFoundError:
         return None
 
+def read_tree_head_and_verify(log_verification_key):
+    fn = os.path.expanduser(g_args.base_dir) + 'signed_tree_head'
+    tree_head = read_tree_head(fn)
+    if not tree_head:
+        return None, (ERR_TREEHEAD_READ,
+                      "ERROR: unable to read file {}".format(fn))
+
+    if not tree_head.signature_valid(log_verification_key):
+        return None, (ERR_TREEHEAD_SIGNATURE_INVALID,
+                      "ERROR: signature of stored tree head invalid")
+
+    return tree_head, None
+
 def store_tree_head(tree_head):
     dirname = os.path.expanduser(g_args.base_dir)
     with open(dirname + 'signed_tree_head', mode='w+b') as f:
         f.write(tree_head.text())
 
-def fetch_tree_head(log_verification_key):
+def fetch_tree_head_and_verify(log_verification_key):
     req = requests.get(g_args.base_url + 'st/v0/get-tree-head-to-sign')
     if req.status_code != 200:
-        return None, (ERR_TREEHEAD_FETCH, "ERROR: unable to fetch new tree head: {}".format(req.status_code))
+        return None, (ERR_TREEHEAD_FETCH,
+                      "ERROR: unable to fetch new tree head: {}".format(req.status_code))
 
     tree_head = TreeHead(req.content.decode())
-
     if not tree_head.signature_valid(log_verification_key):
-        return None, (ERR_TREEHEAD_SIGNATURE_INVALID, "ERROR: signature of fetched tree head not valid")
+        return None, (ERR_TREEHEAD_SIGNATURE_INVALID,
+                      "ERROR: signature of fetched tree head invalid")
 
-    assert(tree_head is not None)
     return tree_head, None
 
 def fetch_consistency_proof(first, second):
@@ -201,9 +214,9 @@ def fetch_consistency_proof(first, second):
     post_data += 'new_size={}\n'.format(second)
     req = requests.post(g_args.base_url + 'st/v0/get-consistency-proof', post_data)
     if req.status_code != 200:
-        print("ERROR: st/v0/get-consistency-proof({}) => {}".format(post_data, req))
-        return None
-    return ConsistencyProof(req.content.decode())
+        return None, (ERR_CONSISTENCYPROOF_FETCH,
+                      "ERROR: unable to fetch consistency proof: {}".format(req.status_code))
+    return ConsistencyProof(req.content.decode()), None
 
 def numbits(n):
     p = 0
@@ -253,9 +266,9 @@ def consistency_proof_valid(first, second, proof):
 
     return sn == 0 and fr == first.root_hash() and sr == second.root_hash()
 
-def sign_and_send_sig(signing_key, sth):
+def sign_send_store_tree_head(signing_key, tree_head):
     hash = sha256(signing_key.verify_key.encode())
-    signature = signing_key.sign(sth.serialise()).signature
+    signature = signing_key.sign(tree_head.serialise()).signature
 
     post_data = 'signature={}\n'.format(hexlify(signature).decode('ascii'))
     post_data += 'key_hash={}\n'.format(hash.hexdigest())
@@ -266,14 +279,18 @@ def sign_and_send_sig(signing_key, sth):
                 "ERROR: Unable to post signature to log: {} => {}: {}". format(req.url,
                                                                                req.status_code,
                                                                                req.text))
+    # Store only when all else is done. Next invocation will treat a
+    # stored tree head as having been verified.
+    store_tree_head(tree_head)
 
 def ensure_log_verification_key():
     if not g_args.log_verification_key:
-        return None, (ERR_LOGKEYFILE, "ERROR: missing log verification key")
+        return None, (ERR_LOGKEY, "ERROR: missing log verification key")
     try:
         log_verification_key = nacl.signing.VerifyKey(g_args.log_verification_key, encoder=nacl.encoding.HexEncoder)
     except:
-        return None, (ERR_LOGKEY_FORMAT, "ERROR: invalid log verification key: {}".format(g_args.log_verification_key))
+        return None, (ERR_LOGKEY_FORMAT,
+                      "ERROR: invalid log verification key: {}".format(g_args.log_verification_key))
 
     assert(log_verification_key is not None)
     return log_verification_key, None
@@ -292,21 +309,28 @@ def ensure_sigkey(fn):
 
     s = os.stat(fn, follow_symlinks=False)
     if not S_ISREG(s.st_mode):
-        return None, (ERR_SIGKEYFILE_TYPE, "ERROR: Signing key file {} must be a regular file".format(fn))
+        return None, (ERR_SIGKEYFILE_TYPE,
+                      "ERROR: Signing key file {} must be a regular file".format(fn))
     if S_IMODE(s.st_mode) & 0o077 != 0:
-        return None, (ERR_SIGKEYFILE_MODE, "ERROR: Signing key file {} permissions too lax: {:04o}".format(fn, S_IMODE(s.st_mode)))
+        return None, (ERR_SIGKEYFILE_MODE,
+                      "ERROR: Signing key file {} permissions too lax: {:04o}".format(fn, S_IMODE(s.st_mode)))
 
     with open(fn, 'r') as f:
         try:
             signing_key = nacl.signing.SigningKey(f.readline().strip(), nacl.encoding.HexEncoder)
         except:
-            return None, (ERR_SIGKEY_FORMAT, "ERROR: Invalid signing key in {}".format(fn))
+            return None, (ERR_SIGKEY_FORMAT,
+                          "ERROR: Invalid signing key in {}".format(fn))
 
     assert(signing_key is not None)
     return signing_key, None
 
+def user_confirm(prompt):
+    if input(prompt + ' y/n> ').lower()[0] == 'y':
+        return True
+    return False
+
 def main(args):
-    msg = None
     global g_args
     g_args = Parser()
     parse_config(CONFIG_FILE)
@@ -326,43 +350,55 @@ def main(args):
     signing_key, err = ensure_sigkey(g_args.sigkey_file)
     if err: return err
 
-    new, err = fetch_tree_head(log_verification_key)
+    new = None                  # FIXME rename new -> new_tree_head
+    cur, err = read_tree_head_and_verify(log_verification_key) # FIXME rename cur -> cur_tree_head
+    if err:
+        new, err2 = fetch_tree_head_and_verify(log_verification_key)
+        if err2: return err2
+
+        if not g_args.bootstrap_log:
+            return err
+
+        print("\nWARNING: We have only seen one single tree head from the\n"
+              "log {},\n"
+              "representing a tree of size {}. We are therefore unable to\n"
+              "verify that the tree it represents is really a superset of an\n"
+              "earlier version of the tree in this log.\n"
+              "\nWe are effectively signing this tree head blindly.\n".format(g_args.base_url,
+                                                                              new.tree_size()))
+        if user_confirm("Really sign head for tree of size {} and upload "
+                        "the signature?".format(new.tree_size())):
+            err3 = sign_send_store_tree_head(signing_key, new)
+            if err3: return err3
+
+        return 0, None
+
+    new, err = fetch_tree_head_and_verify(log_verification_key)
     if err: return err
 
-    # FIXME: if we're bootstrapping, ignore potential tree head on disk
-    cur = read_tree_head()
-    if not cur:
-        print("INFO: No current tree head found in {}".format(g_args.base_dir))
-    else:
-        if not cur.signature_valid(log_verification_key):
-            return ERR_TREEHEAD_SIGNATURE_INVALID, "ERROR: signature of current tree head invalid"
-        if new.tree_size() <= cur.tree_size():
-            msg = "INFO: Fetched tree already verified, size {}".format(cur.tree_size())
-        else:
-            proof = fetch_consistency_proof(cur.tree_size(), new.tree_size())
-            if not proof:
-                return ERR_CONSISTENCYPROOF_FETCH, "ERROR: unable to fetch consistency proof"
-            if consistency_proof_valid(cur, new, proof):
-                consistency_verified = True
-            else:
-                errmsg = "ERROR: failing consistency proof check for {}->{}".format(cur.tree_size(), new.tree_size())
-                errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(cur.tree_size(),
-                                                             cur.root_hash(),
-                                                             new.tree_size(),
-                                                             new.root_hash(),
-                                                             proof.path())
-                return ERR_CONSISTENCYPROOF_INVALID, errmsg
+    if not cur.signature_valid(log_verification_key):
+        return ERR_TREEHEAD_SIGNATURE_INVALID, "ERROR: signature of current tree head invalid"
 
-    if g_args.bootstrap_log:
-        # TODO maybe require user confirmation
-        ignore_consistency = True
+    if new.tree_size() <= cur.tree_size():
+        return 0, "INFO: Fetched head of tree of size {} already seen".format(cur.tree_size())
 
-    store_tree_head(new)
-    if consistency_verified or ignore_consistency:
-        err = sign_and_send_sig(signing_key, new)
-        if err: return err
+    proof, err = fetch_consistency_proof(cur.tree_size(), new.tree_size())
+    if err: return err
 
-    return 0, msg
+    if not consistency_proof_valid(cur, new, proof):
+        errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(cur.tree_size(),
+                                                                              new.tree_size())
+        errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(cur.tree_size(),
+                                                     cur.root_hash(),
+                                                     new.tree_size(),
+                                                     new.root_hash(),
+                                                     proof.path())
+        return ERR_CONSISTENCYPROOF_INVALID, errmsg
+
+    err = sign_send_store_tree_head(signing_key, new)
+    if err: return err
+
+    return 0, None
 
 if __name__ == '__main__':
     status = main(sys.argv)
