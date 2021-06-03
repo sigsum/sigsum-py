@@ -351,9 +351,9 @@ def main(args):
     signing_key, err = ensure_sigkey(g_args.sigkey_file)
     if err: return err
 
-    cur, err = read_tree_head_and_verify(log_verification_key) # FIXME rename cur -> cur_tree_head
+    cur_tree_head, err = read_tree_head_and_verify(log_verification_key)
     if err:
-        new, err2 = fetch_tree_head_and_verify(log_verification_key)
+        new_tree_head, err2 = fetch_tree_head_and_verify(log_verification_key)
         if err2: return err2
 
         if not g_args.bootstrap_log:
@@ -365,37 +365,37 @@ def main(args):
               "verify that the tree it represents is really a superset of an\n"
               "earlier version of the tree in this log.\n"
               "\nWe are effectively signing this tree head blindly.\n".format(g_args.base_url,
-                                                                              new.tree_size()))
+                                                                              new_tree_head.tree_size()))
         if user_confirm("Really sign head for tree of size {} and upload "
-                        "the signature?".format(new.tree_size())):
-            err3 = sign_send_store_tree_head(signing_key, new)
+                        "the signature?".format(new_tree_head.tree_size())):
+            err3 = sign_send_store_tree_head(signing_key, new_tree_head)
             if err3: return err3
 
         return 0, None
 
-    new, err = fetch_tree_head_and_verify(log_verification_key)
+    new_tree_head, err = fetch_tree_head_and_verify(log_verification_key)
     if err: return err
 
-    if not cur.signature_valid(log_verification_key):
+    if not cur_tree_head.signature_valid(log_verification_key):
         return ERR_TREEHEAD_SIGNATURE_INVALID, "ERROR: signature of current tree head invalid"
 
-    if new.tree_size() <= cur.tree_size():
-        return 0, "INFO: Fetched head of tree of size {} already seen".format(cur.tree_size())
+    if new_tree_head.tree_size() <= cur_tree_head.tree_size():
+        return 0, "INFO: Fetched head of tree of size {} already seen".format(cur_tree_head.tree_size())
 
-    proof, err = fetch_consistency_proof(cur.tree_size(), new.tree_size())
+    proof, err = fetch_consistency_proof(cur_tree_head.tree_size(), new_tree_head.tree_size())
     if err: return err
 
-    if not consistency_proof_valid(cur, new, proof):
-        errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(cur.tree_size(),
-                                                                              new.tree_size())
-        errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(cur.tree_size(),
-                                                     cur.root_hash(),
-                                                     new.tree_size(),
-                                                     new.root_hash(),
+    if not consistency_proof_valid(cur_tree_head, new_tree_head, proof):
+        errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(cur_tree_head.tree_size(),
+                                                                              new_tree_head.tree_size())
+        errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(cur_tree_head.tree_size(),
+                                                     cur_tree_head.root_hash(),
+                                                     new_tree_head.tree_size(),
+                                                     new_tree_head.root_hash(),
                                                      proof.path())
         return ERR_CONSISTENCYPROOF_INVALID, errmsg
 
-    err = sign_send_store_tree_head(signing_key, new)
+    err = sign_send_store_tree_head(signing_key, new_tree_head)
     if err: return err
 
     return 0, None
