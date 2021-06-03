@@ -302,7 +302,8 @@ def ensure_sigkey(fn):
     except FileNotFoundError:
         print("INFO: Signing key file {} not found -- generating new signing key".format(fn))
         signing_key = nacl.signing.SigningKey.generate()
-        print("INFO: verification key: {}".format(signing_key.verify_key.encode(nacl.encoding.HexEncoder).decode('ascii')))
+        verify_key = signing_key.verify_key
+        print("INFO: verification key: {}".format(verify_key.encode(nacl.encoding.HexEncoder).decode('ascii')))
         with open(fn, 'w') as f:
             os.chmod(f.fileno(), S_IRUSR)
             f.write(signing_key.encode(encoder=nacl.encoding.HexEncoder).decode('ascii'))
