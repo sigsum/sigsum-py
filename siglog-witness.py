@@ -232,21 +232,22 @@ def consistency_proof_valid(first, second, proof):
 
     return sn == 0 and fr == first.root_hash() and sr == second.root_hash()
 
-def send_to_log(keyhash_hex, signature_hex):
-    post_data = 'signature={}\n'.format(signature_hex)
-    post_data += 'key_hash={}\n'.format(keyhash_hex)
+def sign_and_send_sig(signing_key, sth):
+    hash = sha256(signing_key.verify_key.encode())
+    signature = signing_key.sign(sth.serialise()).signature
+
+    post_data = 'signature={}\n'.format(hexlify(signature).decode('ascii'))
+    post_data += 'key_hash={}\n'.format(hash.hexdigest())
+
     req = requests.post(g_args.base_url + 'st/v0/add-cosignature', post_data)
     if req.status_code != 200:
-        return req
+        print("ERROR: Unable to post signature to log: {} => {}: {}".
+              format(req.url,
+                     req.err_code,
+                     req.text))
+        return None
+    return True
 
-def sign_and_send_sig(signing_key, sth):
-    keyhash = sha256(signing_key.verify_key.encode()).hexdigest()
-    status = send_to_log(keyhash,
-                         hexlify(signing_key.sign(sth.serialise()).signature).decode('ascii'))
-    if status:
-        print("ERROR: Unable to post signature to log: {} => {}: {}".format(status.url,
-                                                                            status.status_code,
-                                                                            status.text))
 def main(args):
     global g_args
     g_args = Parser()
@@ -333,7 +334,8 @@ def main(args):
 
     store_tree_head(new)
     if consistency_verified or ignore_consistency:
-        sign_and_send_sig(signing_key, new)
+        if not sign_and_send_sig(signing_key, new):
+            return 13
 
     return 0
 
