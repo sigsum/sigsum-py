@@ -351,7 +351,6 @@ def main(args):
     signing_key, err = ensure_sigkey(g_args.sigkey_file)
     if err: return err
 
-    new = None                  # FIXME rename new -> new_tree_head
     cur, err = read_tree_head_and_verify(log_verification_key) # FIXME rename cur -> cur_tree_head
     if err:
         new, err2 = fetch_tree_head_and_verify(log_verification_key)
