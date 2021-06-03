@@ -36,7 +36,7 @@ class Parser:
         p = argparse.ArgumentParser(
             description='Sign the most recently published tree head from a given siglog, after verifying it against an older tree.')
 
-        p.add_argument('-b', '--bootstrap-log',
+        p.add_argument('--bootstrap-log',
                        action='store_true',
                        help="Sign and save fetched tree head without verifying a consistency proof against a previous tree head. NOTE: User intervention required.")
 
