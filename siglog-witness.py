@@ -400,6 +400,10 @@ def main(args):
             if err3: return err3
 
         return 0, None
+    else:
+        if g_args.bootstrap_log:
+            return (ERR_USAGE,
+                    "ERROR: Valid tree head found: --bootstrap-log not allowed")
 
     new_tree_head, err = fetch_tree_head_and_verify(log_verification_key)
     if err: return err
