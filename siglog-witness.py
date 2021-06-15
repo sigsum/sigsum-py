@@ -22,6 +22,8 @@ from binascii import hexlify, unhexlify
 import nacl.encoding
 import nacl.signing
 from hashlib import sha256
+import time
+from math import floor
 
 # TODO maybe stop mixing dashes and underscores in directory names and filenames
 
@@ -31,18 +33,19 @@ SIGKEY_FILE_DEFAULT = CONFIG_DIR_DEFAULT + 'signing_key'
 CONFIG_FILE = CONFIG_DIR_DEFAULT + 'siglog-witness.conf'
 
 ERR_USAGE                      = 1
-ERR_TREEHEAD_SIGNATURE_INVALID = 2
-ERR_TREEHEAD_READ              = 3
-ERR_TREEHEAD_FETCH             = 4
-ERR_CONSISTENCYPROOF_FETCH     = 5
-ERR_CONSISTENCYPROOF_INVALID   = 6
-ERR_LOGKEY                     = 7
-ERR_LOGKEY_FORMAT              = 8
-ERR_SIGKEYFILE                 = 9
-ERR_SIGKEYFILE_MISSING         = 10
-ERR_SIGKEY_FORMAT              = 11
-ERR_NYI                        = 12
-ERR_COSIG_POST                 = 13
+ERR_TREEHEAD_READ              = 2
+ERR_TREEHEAD_FETCH             = 3
+ERR_TREEHEAD_SIGNATURE_INVALID = 4
+ERR_TREEHEAD_INVALID           = 5
+ERR_CONSISTENCYPROOF_FETCH     = 6
+ERR_CONSISTENCYPROOF_INVALID   = 7
+ERR_LOGKEY                     = 8
+ERR_LOGKEY_FORMAT              = 9
+ERR_SIGKEYFILE                 = 10
+ERR_SIGKEYFILE_MISSING         = 11
+ERR_SIGKEY_FORMAT              = 12
+ERR_NYI                        = 13
+ERR_COSIG_POST                 = 14
 
 class Parser:
     def __init__(self):
@@ -368,6 +371,7 @@ def main(args):
         # TODO write to config file
         return ERR_NYI, "ERROR: --save-config is not yet implemented"
 
+    now = floor(time.time())
     consistency_verified = False
     ignore_consistency = False
 
@@ -411,6 +415,16 @@ def main(args):
     if not cur_tree_head.signature_valid(log_verification_key):
         return ERR_TREEHEAD_SIGNATURE_INVALID, "ERROR: signature of current tree head invalid"
 
+    ts_sec = new_tree_head.timestamp()
+    ts_asc = time.ctime(ts_sec)
+    if ts_sec < now - 12 * 3600:
+        return (ERR_TREEHEAD_INVALID,
+                "ERROR: timestamp too old: {} ({})".format(ts_sec, ts_asc))
+    if ts_sec > now + 12 * 3600:
+        return (ERR_TREEHEAD_INVALID,
+                "ERROR: timestamp too new: {} ({})".format(ts_sec, ts_asc))
+
+    # TODO: Needs more thought: size, hash, timestamp -- what may change and what may not?
     if new_tree_head.tree_size() <= cur_tree_head.tree_size():
         return 0, "INFO: Fetched head of tree of size {} already seen".format(cur_tree_head.tree_size())
 
