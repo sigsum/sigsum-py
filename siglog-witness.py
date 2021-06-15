@@ -30,6 +30,7 @@ CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/siglog-witness/')
 SIGKEY_FILE_DEFAULT = CONFIG_DIR_DEFAULT + 'signing_key'
 CONFIG_FILE = CONFIG_DIR_DEFAULT + 'siglog-witness.conf'
 
+ERR_USAGE                      = 1
 ERR_TREEHEAD_SIGNATURE_INVALID = 2
 ERR_TREEHEAD_READ              = 3
 ERR_TREEHEAD_FETCH             = 4
@@ -37,8 +38,8 @@ ERR_CONSISTENCYPROOF_FETCH     = 5
 ERR_CONSISTENCYPROOF_INVALID   = 6
 ERR_LOGKEY                     = 7
 ERR_LOGKEY_FORMAT              = 8
-ERR_SIGKEYFILE_TYPE            = 9
-ERR_SIGKEYFILE_MODE            = 10
+ERR_SIGKEYFILE                 = 9
+ERR_SIGKEYFILE_MISSING         = 10
 ERR_SIGKEY_FORMAT              = 11
 ERR_NYI                        = 12
 ERR_COSIG_POST                 = 13
@@ -50,11 +51,16 @@ class Parser:
 
         p.add_argument('--bootstrap-log',
                        action='store_true',
-                       help="Sign and save fetched tree head without verifying a consistency proof against a previous tree head. NOTE: User intervention required.")
+                       help="Sign and save fetched tree head without verifying a consistency proof against a previous tree head. "
+                       "NOTE: Requires user intervention.")
 
         p.add_argument('-d', '--base-dir',
                        default=CONFIG_DIR_DEFAULT,
                        help="Configuration directory ({})".format(CONFIG_DIR_DEFAULT))
+
+        p.add_argument('-g', '--generate-signing-key',
+                       action='store_true',
+                       help="Generate signing key if missing. NOTE: Requires user intervention.")
 
         p.add_argument('-l', '--log-verification-key',
                        help="Log verification key")
@@ -295,25 +301,22 @@ def ensure_log_verification_key():
     assert(log_verification_key is not None)
     return log_verification_key, None
 
-# Read signature key from file, or generate one and write it to file.
-def ensure_sigkey(fn):
-    try:
-        os.stat(fn, follow_symlinks=False)
-    except FileNotFoundError:
-        print("INFO: Signing key file {} not found -- generating new signing key".format(fn))
-        signing_key = nacl.signing.SigningKey.generate()
-        verify_key = signing_key.verify_key
-        print("INFO: verification key: {}".format(verify_key.encode(nacl.encoding.HexEncoder).decode('ascii')))
-        with open(fn, 'w') as f:
-            os.chmod(f.fileno(), S_IRUSR)
-            f.write(signing_key.encode(encoder=nacl.encoding.HexEncoder).decode('ascii'))
+def generate_and_store_sigkey(fn):
+    print("INFO: Generating signing key and writing it to {}".format(fn))
+    signing_key = nacl.signing.SigningKey.generate()
+    verify_key = signing_key.verify_key
+    print("INFO: verification key: {}".format(verify_key.encode(nacl.encoding.HexEncoder).decode('ascii')))
+    with open(fn, 'w') as f:
+        os.chmod(f.fileno(), S_IRUSR)
+        f.write(signing_key.encode(encoder=nacl.encoding.HexEncoder).decode('ascii'))
 
+def read_sigkeyfile(fn):
     s = os.stat(fn, follow_symlinks=False)
     if not S_ISREG(s.st_mode):
-        return None, (ERR_SIGKEYFILE_TYPE,
+        return None, (ERR_SIGKEYFILE,
                       "ERROR: Signing key file {} must be a regular file".format(fn))
     if S_IMODE(s.st_mode) & 0o077 != 0:
-        return None, (ERR_SIGKEYFILE_MODE,
+        return None, (ERR_SIGKEYFILE,
                       "ERROR: Signing key file {} permissions too lax: {:04o}".format(fn, S_IMODE(s.st_mode)))
 
     with open(fn, 'r') as f:
@@ -325,6 +328,30 @@ def ensure_sigkey(fn):
 
     assert(signing_key is not None)
     return signing_key, None
+
+
+# Read signature key from file, or generate one and write it to file.
+def ensure_sigkey(fn):
+    try:
+        os.stat(fn, follow_symlinks=False)
+    except FileNotFoundError:
+        if not g_args.generate_signing_key:
+            return None, (ERR_SIGKEYFILE_MISSING,
+                          "ERROR: Signing key file {} missing. "
+                          "Use --generate-signing-key to create one.".format(fn))
+
+        if not user_confirm("Really generate a new signing key and store it in {}?".format(fn)):
+            return None, (ERR_SIGKEYFILE_MISSING,
+                          "ERROR: Signing key file {} missing".format(fn))
+
+        generate_and_store_sigkey(fn)
+        return read_sigkeyfile(fn)
+
+    if g_args.generate_signing_key:
+        return None, (ERR_USAGE,
+                      "ERROR: Signing key file {} already existing".format(fn))
+    return read_sigkeyfile(fn)
+
 
 def user_confirm(prompt):
     resp = input(prompt + ' y/n> ').lower()
