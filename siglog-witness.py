@@ -327,7 +327,8 @@ def ensure_sigkey(fn):
     return signing_key, None
 
 def user_confirm(prompt):
-    if input(prompt + ' y/n> ').lower()[0] == 'y':
+    resp = input(prompt + ' y/n> ').lower()
+    if resp and resp[0] == 'y':
         return True
     return False
 
