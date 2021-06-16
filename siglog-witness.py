@@ -32,6 +32,7 @@ CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/siglog-witness/')
 SIGKEY_FILE_DEFAULT = CONFIG_DIR_DEFAULT + 'signing_key'
 CONFIG_FILE = CONFIG_DIR_DEFAULT + 'siglog-witness.conf'
 
+ERR_OK                         = 0
 ERR_USAGE                      = 1
 ERR_TREEHEAD_READ              = 2
 ERR_TREEHEAD_FETCH             = 3
@@ -418,11 +419,11 @@ def main(args):
     ts_sec = new_tree_head.timestamp()
     ts_asc = time.ctime(ts_sec)
     if ts_sec < now - 12 * 3600:
-        return (ERR_TREEHEAD_INVALID,
-                "ERROR: timestamp too old: {} ({})".format(ts_sec, ts_asc))
+        return (ERR_OK,
+                "WARNING: timestamp too old: {} ({})".format(ts_sec, ts_asc))
     if ts_sec > now + 12 * 3600:
-        return (ERR_TREEHEAD_INVALID,
-                "ERROR: timestamp too new: {} ({})".format(ts_sec, ts_asc))
+        return (ERR_OK,
+                "WARNING: timestamp too new: {} ({})".format(ts_sec, ts_asc))
 
     # TODO: Needs more thought: size, hash, timestamp -- what may change and what may not?
     if new_tree_head.tree_size() <= cur_tree_head.tree_size():
