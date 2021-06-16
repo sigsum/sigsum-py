@@ -203,7 +203,13 @@ class TreeHead:
                                           self.root_hash,
                                           prev.root_hash))
 
-        # Same hash and size but new timestamp is ok.
+        # New timestamp but same hash and size is ok but there's no
+        # consistency to prove.
+        if self.root_hash == prev.root_hash:
+            assert(self.tree_size == prev.tree_size)
+            assert(self.timestamp != prev.timestamp)
+            print("INFO: Signing re-published head of tree of size {}".format(self.tree_size))
+            return None         # Success
 
         proof, err = fetch_consistency_proof(prev.tree_size, self.tree_size)
         if err: return err
