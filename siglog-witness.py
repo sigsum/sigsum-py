@@ -416,22 +416,52 @@ def main(args):
     if not cur_tree_head.signature_valid(log_verification_key):
         return ERR_TREEHEAD_SIGNATURE_INVALID, "ERROR: signature of current tree head invalid"
 
+    # TODO: move to TreeHead.validate_history()
     ts_sec = new_tree_head.timestamp()
     ts_asc = time.ctime(ts_sec)
     if ts_sec < now - 12 * 3600:
         return (ERR_OK,
-                "WARNING: timestamp too old: {} ({})".format(ts_sec, ts_asc))
+                "WARNING: Tree head timestamp too old: {} ({})".format(ts_sec, ts_asc))
     if ts_sec > now + 12 * 3600:
         return (ERR_OK,
-                "WARNING: timestamp too new: {} ({})".format(ts_sec, ts_asc))
+                "WARNING: Tree head timestamp too new: {} ({})".format(ts_sec, ts_asc))
 
-    # TODO: Needs more thought: size, hash, timestamp -- what may change and what may not?
-    if new_tree_head.tree_size() <= cur_tree_head.tree_size():
-        return 0, "INFO: Fetched head of tree of size {} already seen".format(cur_tree_head.tree_size())
+    if new_tree_head.tree_size() < cur_tree_head.tree_size():
+        return (ERR_TREEHEAD_INVALID,
+                "ERROR: Log is shrinking: {} < {} ".format(new_tree_head.tree_size(),
+                                                           cur_tree_head.tree_size()))
+
+    if new_tree_head.timestamp() < cur_tree_head.timestamp():
+        return (ERR_TREEHEAD_INVALID,
+                "ERROR: Log is time traveling: {} < {} ".format(time.ctime(new_tree_head.timestamp()),
+                                                                time.ctime(cur_tree_head.timestamp())))
+
+    if new_tree_head.timestamp() == cur_tree_head.timestamp() and \
+       new_tree_head.root_hash() == cur_tree_head.root_hash() and \
+       new_tree_head.tree_size() == cur_tree_head.tree_size():
+        return (ERR_OK,
+                "INFO: Fetched head of tree of size {} already seen".format(cur_tree_head.tree_size()))
+
+    if new_tree_head.root_hash() == cur_tree_head.root_hash() and \
+       new_tree_head.tree_size() != cur_tree_head.tree_size():
+        return (ERR_TREEHEAD_INVALID,
+                "ERROR: Tree size has changed but hash has not: "
+                "{}: {} != {}".format(new_tree_head.root_hash(),
+                                      new_tree_head.tree_size(),
+                                      cur_tree_head.tree_size()))
+
+    if new_tree_head.root_hash() != cur_tree_head.root_hash() and \
+       new_tree_head.tree_size() == cur_tree_head.tree_size():
+        return (ERR_TREEHEAD_INVALID,
+                "ERROR: Hash has changed but tree size has not: "
+                "{}: {} != {}".format(new_tree_head.tree_size(),
+                                      new_tree_head.root_hash(),
+                                      cur_tree_head.root_hash()))
+
+    # Same hash and size, new timestamp is ok.
 
     proof, err = fetch_consistency_proof(cur_tree_head.tree_size(), new_tree_head.tree_size())
     if err: return err
-
     if not consistency_proof_valid(cur_tree_head, new_tree_head, proof):
         errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(cur_tree_head.tree_size(),
                                                                               new_tree_head.tree_size())
@@ -441,6 +471,7 @@ def main(args):
                                                      new_tree_head.root_hash(),
                                                      proof.path())
         return ERR_CONSISTENCYPROOF_INVALID, errmsg
+    # TODO: end move
 
     err = sign_send_store_tree_head(signing_key, new_tree_head)
     if err: return err
