@@ -24,13 +24,12 @@ import nacl.signing
 from hashlib import sha256
 import time
 from math import floor
+from pathlib import PurePath
 
 # TODO maybe stop mixing dashes and underscores in directory names and filenames
 
 BASE_URL_DEFAULT = 'http://tlog-poc.system-transparency.org:6965/'
 CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/siglog-witness/')
-SIGKEY_FILE_DEFAULT = CONFIG_DIR_DEFAULT + 'signing_key'
-CONFIG_FILE = CONFIG_DIR_DEFAULT + 'siglog-witness.conf'
 
 ERR_OK                         = 0
 ERR_USAGE                      = 1
@@ -74,8 +73,8 @@ class Parser:
                        help="Save command line options to the configuration file")
 
         p.add_argument('-s', '--sigkey-file',
-                       default=SIGKEY_FILE_DEFAULT,
-                       help="Signing key file ({})".format(SIGKEY_FILE_DEFAULT))
+                       default='signing_key',
+                       help="Signing key file ($base_dir/signing_key)")
 
         p.add_argument('-u', '--base-url',
                        default=BASE_URL_DEFAULT,
@@ -189,7 +188,7 @@ def read_tree_head(filename):
         return None
 
 def read_tree_head_and_verify(log_verification_key):
-    fn = os.path.expanduser(g_args.base_dir) + 'signed_tree_head'
+    fn = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed_tree_head'))
     tree_head = read_tree_head(fn)
     if not tree_head:
         return None, (ERR_TREEHEAD_READ,
@@ -202,8 +201,8 @@ def read_tree_head_and_verify(log_verification_key):
     return tree_head, None
 
 def store_tree_head(tree_head):
-    dirname = os.path.expanduser(g_args.base_dir)
-    with open(dirname + 'signed_tree_head', mode='w+b') as f:
+    path = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed_tree_head'))
+    with open(path, mode='w+b') as f:
         f.write(tree_head.text())
 
 def fetch_tree_head_and_verify(log_verification_key):
@@ -366,8 +365,9 @@ def user_confirm(prompt):
 def main(args):
     global g_args
     g_args = Parser()
-    parse_config(CONFIG_FILE)
-    parse_args(args)
+    parse_args(args)            # get base_dir
+    parse_config(str(PurePath(g_args.base_dir, 'siglog-witness.conf')))
+    parse_args(args)            # override config file options
     if g_args.save_config:
         # TODO write to config file
         return ERR_NYI, "ERROR: --save-config is not yet implemented"
@@ -381,7 +381,7 @@ def main(args):
     log_verification_key, err = ensure_log_verification_key()
     if err: return err
 
-    signing_key, err = ensure_sigkey(g_args.sigkey_file)
+    signing_key, err = ensure_sigkey(str(PurePath(g_args.base_dir, g_args.sigkey_file)))
     if err: return err
 
     cur_tree_head, err = read_tree_head_and_verify(log_verification_key)
