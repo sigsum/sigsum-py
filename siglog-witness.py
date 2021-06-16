@@ -5,7 +5,7 @@
 # head to this new tree head.
 
 # A verified tree head is expected to be found in the file
-# ~/.config/siglog-witness/signed_tree_head . It's updated once a
+# ~/.config/siglog-witness/signed-tree-head . It's updated once a
 # newer tree head has been verified successfully.
 
 # If the config file ~/.config/siglog-witness/siglog-witness.conf
@@ -25,8 +25,6 @@ from hashlib import sha256
 import time
 from math import floor
 from pathlib import PurePath
-
-# TODO maybe stop mixing dashes and underscores in directory names and filenames
 
 BASE_URL_DEFAULT = 'http://tlog-poc.system-transparency.org:6965/'
 CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/siglog-witness/')
@@ -73,8 +71,8 @@ class Parser:
                        help="Save command line options to the configuration file")
 
         p.add_argument('-s', '--sigkey-file',
-                       default='signing_key',
-                       help="Signing key file ($base_dir/signing_key)")
+                       default='signing-key',
+                       help="Signing key file, relative to $base_dir if not an absolute path (signing-key)")
 
         p.add_argument('-u', '--base-url',
                        default=BASE_URL_DEFAULT,
@@ -258,7 +256,7 @@ def read_tree_head(filename):
         return None
 
 def read_tree_head_and_verify(log_verification_key):
-    fn = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed_tree_head'))
+    fn = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed-tree-head'))
     tree_head = read_tree_head(fn)
     if not tree_head:
         return None, (ERR_TREEHEAD_READ,
@@ -271,7 +269,7 @@ def read_tree_head_and_verify(log_verification_key):
     return tree_head, None
 
 def store_tree_head(tree_head):
-    path = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed_tree_head'))
+    path = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed-tree-head'))
     with open(path, mode='w+b') as f:
         f.write(tree_head.text())
 
