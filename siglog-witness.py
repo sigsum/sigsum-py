@@ -223,6 +223,7 @@ class TreeHead:
                                                          proof.path())
             return ERR_CONSISTENCYPROOF_INVALID, errmsg
 
+        return None             # Success
 
 class ConsistencyProof():
     def __init__(self, consistency_proof_data):
