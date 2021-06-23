@@ -1,4 +1,5 @@
-# siglog-witness-py: A Signature Transparency Logging witness
+# sigsum-witness-py
+An implementation of a witness that cosigns a sigsum log.
 
 ## License
 
