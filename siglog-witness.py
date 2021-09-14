@@ -223,17 +223,17 @@ class TreeHead:
         return None             # Success
 
 class ConsistencyProof():
-    def __init__(self, consistency_proof_data):
+    def __init__(self, old_size, new_size, consistency_proof_data):
+        self._old_size = old_size
+        self._new_size = new_size
         self._text = parse_keyval(consistency_proof_data)
-        assert(len(self._text) == 3)
-        assert('old_size' in self._text)
-        assert('new_size' in self._text)
+        assert(len(self._text) == 1)
         assert('consistency_path' in self._text)
 
     def old_size(self):
-        return int(self._text['old_size'])
+        return self._old_size
     def new_size(self):
-        return int(self._text['new_size'])
+        return self._new_size
     def path(self):
         if type(self._text['consistency_path']) is list:
             return [unhexlify(e) for e in self._text['consistency_path']]
@@ -292,7 +292,7 @@ def fetch_consistency_proof(first, second):
     if req.status_code != 200:
         return None, (ERR_CONSISTENCYPROOF_FETCH,
                       "ERROR: unable to fetch consistency proof: {}".format(req.status_code))
-    return ConsistencyProof(req.content.decode()), None
+    return ConsistencyProof(first, second, req.content.decode()), None
 
 def numbits(n):
     p = 0
