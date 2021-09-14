@@ -136,10 +136,11 @@ class TreeHead:
         text += 'signature={}\n'.format(self._text['signature'])
         return text.encode('ascii')
 
-    def serialise(self):
+    def serialise(self, pubkey):
         data = struct.pack('!QQ', self.timestamp, self.tree_size)
         data += unhexlify(self._text['root_hash'])
-        assert(len(data) == 48)
+        data += sha256(pubkey.encode()).digest()
+        assert(len(data) == 8 + 8 + 32 + 32)
         return data
 
     def signature_valid(self, pubkey):
@@ -148,7 +149,7 @@ class TreeHead:
         assert(type(self._text['signature']) is str)
         sig = unhexlify(self._text['signature'])
         assert(len(sig) == 64)
-        data = self.serialise()
+        data = self.serialise(pubkey)
         try:
             verified_data = pubkey.verify(sig + data)
         except nacl.exceptions.BadSignatureError:
@@ -341,11 +342,11 @@ def consistency_proof_valid(first, second, proof):
 
     return sn == 0 and fr == first.root_hash and sr == second.root_hash
 
-def sign_send_store_tree_head(signing_key, tree_head):
+def sign_send_store_tree_head(signing_key, log_key, tree_head):
+    signature = signing_key.sign(tree_head.serialise(log_key)).signature
     hash = sha256(signing_key.verify_key.encode())
-    signature = signing_key.sign(tree_head.serialise()).signature
 
-    post_data = 'signature={}\n'.format(hexlify(signature).decode('ascii'))
+    post_data = 'cosignature={}\n'.format(hexlify(signature).decode('ascii'))
     post_data += 'key_hash={}\n'.format(hash.hexdigest())
 
     req = requests.post(g_args.base_url + 'sigsum/v0/add-cosignature', post_data)
@@ -467,7 +468,7 @@ def main(args):
                                                                               new_tree_head.tree_size))
         if user_confirm("Really sign head for tree of size {} and upload "
                         "the signature?".format(new_tree_head.tree_size)):
-            err3 = sign_send_store_tree_head(signing_key, new_tree_head)
+            err3 = sign_send_store_tree_head(signing_key, log_verification_key, new_tree_head)
             if err3: return err3
 
         return 0, None
@@ -488,7 +489,7 @@ def main(args):
     if not cur_tree_head.signature_valid(log_verification_key):
         return ERR_TREEHEAD_SIGNATURE_INVALID, "ERROR: signature of current tree head invalid"
 
-    err = sign_send_store_tree_head(signing_key, new_tree_head)
+    err = sign_send_store_tree_head(signing_key, log_verification_key, new_tree_head)
     if err: return err
 
     return 0, None
