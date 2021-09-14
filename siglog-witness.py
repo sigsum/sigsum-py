@@ -111,12 +111,11 @@ def parse_keyval(text):
 class TreeHead:
     def __init__(self, sth_data):
         self._text = parse_keyval(sth_data)
-        assert(len(self._text) == 5)
+        assert(len(self._text) == 4)
         assert('timestamp' in self._text)
         assert('tree_size' in self._text)
         assert('root_hash' in self._text)
         assert('signature' in self._text)
-        assert('key_hash' in self._text)
 
     @property
     def timestamp(self):
@@ -135,7 +134,6 @@ class TreeHead:
         text += 'tree_size={}\n'.format(self._text['tree_size'])
         text += 'root_hash={}\n'.format(self._text['root_hash'])
         text += 'signature={}\n'.format(self._text['signature'])
-        text += 'key_hash={}\n'.format(self._text['key_hash'])
         return text.encode('ascii')
 
     def serialise(self):
