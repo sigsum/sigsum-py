@@ -5,12 +5,16 @@
 # head to this new tree head.
 
 # A verified tree head is expected to be found in the file
-# ~/.config/siglog-witness/signed-tree-head . It's updated once a
+# ~/.config/sigsum-witness/signed-tree-head . It's updated once a
 # newer tree head has been verified successfully.
 
-# If the config file ~/.config/siglog-witness/siglog-witness.conf
+# If the config file ~/.config/sigsum-witness/sigsum-witness.conf
 # exists and is readable, options are read from it. Options read from
 # the config file can be overridden on the command line.
+
+# Pubkey from secret key:
+# sigkey = nacl.signing.SigningKey('badc0ffee123456...', nacl.encoding.HexEncoder)
+# sigkey.verify_key.encode(nacl.encoding.HexEncoder)
 
 import sys
 import os
@@ -26,8 +30,8 @@ import time
 from math import floor
 from pathlib import PurePath
 
-BASE_URL_DEFAULT = 'http://tlog-poc.system-transparency.org:6965/'
-CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/siglog-witness/')
+BASE_URL_DEFAULT = 'http://poc.sigsum.org:4780/'
+CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/sigsum-witness/')
 
 ERR_OK                         = 0
 ERR_USAGE                      = 1
@@ -48,7 +52,7 @@ ERR_COSIG_POST                 = 14
 class Parser:
     def __init__(self):
         p = argparse.ArgumentParser(
-            description='Sign the most recently published tree head from a given siglog, after verifying it against an older tree.')
+            description='Sign the most recently published tree head from a given sigsum log, after verifying it against an older tree.')
 
         p.add_argument('--bootstrap-log',
                        action='store_true',
@@ -433,7 +437,7 @@ def main(args):
     global g_args
     g_args = Parser()
     parse_args(args)            # get base_dir
-    parse_config(str(PurePath(g_args.base_dir, 'siglog-witness.conf')))
+    parse_config(str(PurePath(g_args.base_dir, 'sigsum-witness.conf')))
     parse_args(args)            # override config file options
     if g_args.save_config:
         # TODO write to config file
