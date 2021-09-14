@@ -274,7 +274,7 @@ def store_tree_head(tree_head):
         f.write(tree_head.text())
 
 def fetch_tree_head_and_verify(log_verification_key):
-    req = requests.get(g_args.base_url + 'st/v0/get-tree-head-to-sign')
+    req = requests.get(g_args.base_url + 'sigsum/v0/get-tree-head-to-sign')
     if req.status_code != 200:
         return None, (ERR_TREEHEAD_FETCH,
                       "ERROR: unable to fetch new tree head: {}".format(req.status_code))
@@ -289,7 +289,7 @@ def fetch_tree_head_and_verify(log_verification_key):
 def fetch_consistency_proof(first, second):
     post_data = 'old_size={}\n'.format(first)
     post_data += 'new_size={}\n'.format(second)
-    req = requests.post(g_args.base_url + 'st/v0/get-consistency-proof', post_data)
+    req = requests.post(g_args.base_url + 'sigsum/v0/get-consistency-proof', post_data)
     if req.status_code != 200:
         return None, (ERR_CONSISTENCYPROOF_FETCH,
                       "ERROR: unable to fetch consistency proof: {}".format(req.status_code))
@@ -350,7 +350,7 @@ def sign_send_store_tree_head(signing_key, tree_head):
     post_data = 'signature={}\n'.format(hexlify(signature).decode('ascii'))
     post_data += 'key_hash={}\n'.format(hash.hexdigest())
 
-    req = requests.post(g_args.base_url + 'st/v0/add-cosignature', post_data)
+    req = requests.post(g_args.base_url + 'sigsum/v0/add-cosignature', post_data)
     if req.status_code != 200:
         return (ERR_COSIG_POST,
                 "ERROR: Unable to post signature to log: {} => {}: {}". format(req.url,
