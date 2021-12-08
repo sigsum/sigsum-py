@@ -164,12 +164,13 @@ class TreeHead:
     def timestamp_valid(self, now):
         ts_sec = self.timestamp
         ts_asc = time.ctime(ts_sec)
-        if ts_sec < now - 12 * 3600:
+        acceptable_drift = 10
+        if ts_sec < now - 5 * 60 - acceptable_drift:
             return (ERR_OK,
-                    "WARNING: Tree head timestamp too old: {} ({})".format(ts_sec, ts_asc))
-        if ts_sec > now + 12 * 3600:
+                    "WARNING: Tree head timestamp older than five minutes: {} ({})".format(ts_sec, ts_asc))
+        if ts_sec > now + acceptable_drift:
             return (ERR_OK,
-                    "WARNING: Tree head timestamp too new: {} ({})".format(ts_sec, ts_asc))
+                    "WARNING: Tree head timestamp from the future: {} ({})".format(ts_sec, ts_asc))
 
     def history_valid(self, prev):
         if self.tree_size < prev.tree_size:
