@@ -35,8 +35,8 @@ def ssh_blob(vk, sig, namespace):
                               6, bytes(alg, 'ascii'),
                               83, sigdata)).decode('ascii')
     while len(b) > 0:
-        s += b[:72] + '\n'
-        b = b[72:]
+        s += b[:70] + '\n'
+        b = b[70:]
     s += "-----END SSH SIGNATURE-----\n"
     return s
 
