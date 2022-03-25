@@ -11,7 +11,7 @@ from nacl.signing import VerifyKey, SigningKey
 from nacl.encoding import HexEncoder
 from libsigntools import checksum_stdin, ssh_to_sign
 
-alg = 'sha512'
+alg = 'sha256'
 
 def ssh_blob(vk, sig, namespace):
     vkdata = struct.pack('!I11sI32s',

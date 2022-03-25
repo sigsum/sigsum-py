@@ -9,7 +9,7 @@ from nacl.signing import VerifyKey
 from nacl.encoding import HexEncoder
 from libsigntools import checksum_stdin, ssh_to_sign
 
-alg = 'sha512'
+alg = 'sha256'
 
 def main():
     keyfile = sys.argv[1]
