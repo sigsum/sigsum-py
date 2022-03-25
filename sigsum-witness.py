@@ -29,6 +29,7 @@ from hashlib import sha256
 import time
 from math import floor
 from pathlib import PurePath
+from tools.libsigntools import ssh_to_sign
 
 BASE_URL_DEFAULT = 'http://poc.sigsum.org:4780/'
 CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/sigsum-witness/')
@@ -140,12 +141,12 @@ class TreeHead:
         text += 'signature={}\n'.format(self._text['signature'])
         return text.encode('ascii')
 
-    def serialise(self, pubkey):
-        data = struct.pack('!QQ', self.timestamp, self.tree_size)
-        data += unhexlify(self._text['root_hash'])
-        data += sha256(pubkey.encode()).digest()
-        assert(len(data) == 8 + 8 + 32 + 32)
-        return data
+    def to_signed_data(self, pubkey):
+        namespace = 'tree_head:v0:{}@sigsum.org'.format(hexlify(sha256(pubkey.encode()).digest()).decode())
+        msg = struct.pack('!QQ', self.timestamp, self.tree_size)
+        msg += unhexlify(self._text['root_hash'])
+        assert(len(msg) == 8 + 8 + 32)
+        return ssh_to_sign(namespace, 'sha256', sha256(msg).digest())
 
     def signature_valid(self, pubkey):
         # Guard against tree head with >1 signature -- don't try to
@@ -153,7 +154,7 @@ class TreeHead:
         assert(type(self._text['signature']) is str)
         sig = unhexlify(self._text['signature'])
         assert(len(sig) == 64)
-        data = self.serialise(pubkey)
+        data = self.to_signed_data(pubkey)
         try:
             verified_data = pubkey.verify(sig + data)
         except nacl.exceptions.BadSignatureError:
@@ -348,7 +349,7 @@ def consistency_proof_valid(first, second, proof):
     return sn == 0 and fr == first.root_hash and sr == second.root_hash
 
 def sign_send_store_tree_head(signing_key, log_key, tree_head):
-    signature = signing_key.sign(tree_head.serialise(log_key)).signature
+    signature = signing_key.sign(tree_head.to_signed_data(log_key)).signature
     hash = sha256(signing_key.verify_key.encode())
 
     post_data = 'cosignature={}\n'.format(hexlify(signature).decode('ascii'))
