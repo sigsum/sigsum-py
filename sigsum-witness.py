@@ -279,7 +279,7 @@ def store_tree_head(tree_head):
         f.write(tree_head.text())
 
 def fetch_tree_head_and_verify(log_verification_key):
-    req = requests.get(g_args.base_url + 'sigsum/v0/get-tree-head-to-sign')
+    req = requests.get(g_args.base_url + 'sigsum/v0/get-tree-head-to-cosign')
     if req.status_code != 200:
         return None, (ERR_TREEHEAD_FETCH,
                       "ERROR: unable to fetch new tree head: {}".format(req.status_code))
