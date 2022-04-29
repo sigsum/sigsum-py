@@ -292,9 +292,8 @@ def fetch_tree_head_and_verify(log_verification_key):
     return tree_head, None
 
 def fetch_consistency_proof(first, second):
-    post_data = 'old_size={}\n'.format(first)
-    post_data += 'new_size={}\n'.format(second)
-    req = requests.post(g_args.base_url + 'sigsum/v0/get-consistency-proof', post_data)
+    url = g_args.base_url + 'sigsum/v0/get-consistency-proof/{}/{}'.format(first, second)
+    req = requests.get(url)
     if req.status_code != 200:
         return None, (ERR_CONSISTENCYPROOF_FETCH,
                       "ERROR: unable to fetch consistency proof: {}".format(req.status_code))
