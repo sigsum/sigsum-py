@@ -35,7 +35,7 @@ BASE_URL_DEFAULT = 'http://poc.sigsum.org:4780/'
 CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/sigsum-witness/')
 
 ERR_OK                         = 0
-ERR_USAGE                      = 1
+ERR_USAGE                      = os.EX_USAGE
 ERR_TREEHEAD_READ              = 2
 ERR_TREEHEAD_FETCH             = 3
 ERR_TREEHEAD_SIGNATURE_INVALID = 4
