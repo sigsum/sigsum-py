@@ -386,14 +386,10 @@ def generate_and_store_sigkey(fn):
         f.write(signing_key.encode(encoder=nacl.encoding.HexEncoder).decode('ascii'))
 
 def read_sigkeyfile(fn):
-    s = os.stat(fn, follow_symlinks=False)
-    if not S_ISREG(s.st_mode):
-        return None, (ERR_SIGKEYFILE,
-                      "ERROR: Signing key file {} must be a regular file".format(fn))
-    if S_IMODE(s.st_mode) & 0o077 != 0:
-        return None, (ERR_SIGKEYFILE,
-                      "ERROR: Signing key file {} permissions too lax: {:04o}".format(fn, S_IMODE(s.st_mode)))
-
+    try:
+        check_sigkeyfile(fn)
+    except SigKeyFileError as err:
+        return None, (ERR_SIGKEYFILE, str(err))
     with open(fn, 'r') as f:
         try:
             signing_key = nacl.signing.SigningKey(f.readline().strip(), nacl.encoding.HexEncoder)
@@ -403,6 +399,21 @@ def read_sigkeyfile(fn):
 
     assert(signing_key is not None)
     return signing_key, None
+
+
+def check_sigkeyfile(fn):
+    try:
+        s = os.stat(fn, follow_symlinks=True)
+    except FileNotFoundError:
+        raise SigKeyFileError(f"ERROR: File not found: {fn}")
+    if not S_ISREG(s.st_mode):
+        raise SigKeyFileError(f"ERROR: Signing key file {fn} must be a regular file")
+    if S_IMODE(s.st_mode) & 0o077 != 0:
+        raise SigKeyFileError(f"ERROR: Signing key file {fn} permissions too lax: {S_IMODE(s.st_mode):04o}")
+
+
+class SigKeyFileError(Exception):
+    pass
 
 
 # Read signature key from file, or generate one and write it to file.

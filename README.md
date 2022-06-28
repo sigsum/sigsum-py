@@ -9,3 +9,13 @@ The full license text can be found in the file LICENSE.
 
 This license is also known as the BSD-2-Clause and the Simplified BSD
 License.
+
+## Hacking
+
+### Running tests
+
+Use [`pytest`](https://docs.pytest.org/) to run the automated tests:
+
+```
+$ pytest .
+```
