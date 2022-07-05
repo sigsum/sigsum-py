@@ -9,7 +9,7 @@ class Test_check_sigkeyfile:
     def test_file_ok(self, tmp_path):
         path = tmp_path / "key"
         path.touch(mode=0o700)
-        witness.check_sigkeyfile(path)
+        assert witness.check_sigkeyfile(path) is None
 
     def test_file_notfound(self, tmp_path):
         path = tmp_path / "key"
