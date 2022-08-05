@@ -67,6 +67,7 @@ ERR_SIGKEYFILE_MISSING         = 11
 ERR_SIGKEY_FORMAT              = 12
 ERR_NYI                        = 13
 ERR_COSIG_POST                 = 14
+ERR_TREEHEAD_SEEN              = 15
 
 class Parser:
     def __init__(self):
@@ -226,7 +227,7 @@ class TreeHead:
         if self.timestamp == prev.timestamp and \
            self.root_hash == prev.root_hash and \
            self.tree_size == prev.tree_size:
-            return (ERR_OK,
+            return (ERR_TREEHEAD_SEEN,
                     "INFO: Fetched head of tree of size {} already seen".format(prev.tree_size))
 
         if self.root_hash == prev.root_hash and \
@@ -527,6 +528,10 @@ class Witness(threading.Thread):
             return err
         err = new_tree_head.history_valid(self.cur_tree_head)
         if err:
+            # We don't want to count an already signed treehead as an error
+            if err[0]== ERR_TREEHEAD_SEEN:
+                LOGGER.warning(err[1])
+                return
             return err
         if not self.cur_tree_head.signature_valid(self.log_verification_key):
             return (
