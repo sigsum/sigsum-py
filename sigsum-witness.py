@@ -120,7 +120,15 @@ class Parser:
             const=logging.DEBUG,
             default=logging.INFO,
             dest="log_level",
-            help="Log base URL ({})".format(BASE_URL_DEFAULT),
+            help="Increase verbosity",
+        )
+
+        p.add_argument(
+            "--metrics-port",
+            action="store",
+            type=int,
+            default=8000,
+            help="Port of the HTTP server to expose Prometheus metrics.",
         )
 
         self.parser = p
@@ -599,8 +607,8 @@ def main(args):
                     "ERROR: Valid tree head found: --bootstrap-log not allowed")
 
     # Start up the server to expose the metrics.
-    LOGGER.info("Starting metrics server on port 8000")
-    prometheus.start_http_server(8000)
+    LOGGER.info(f"Starting metrics server on port {g_args.metrics_port}")
+    prometheus.start_http_server(g_args.metrics_port)
 
     LOGGER.info("Starting witness")
     thread = Witness(signing_key, log_verification_key, cur_tree_head)
