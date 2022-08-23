@@ -51,6 +51,12 @@ SIGNING_ERROR = prometheus.Counter(
 LAST_SUCCESS = prometheus.Gauge(
     "sigsum_witness_last_success", "Time of last successful signature"
 )
+LOG_TIME = prometheus.Gauge(
+    "sigsum_witness_log_time_unixtime", "Latest tree-head timestamp from the log."
+)
+TREE_SIZE = prometheus.Gauge(
+    "sigsum_witness_tree_size", "Latest tree size from the log."
+)
 
 ERR_OK                         = 0
 ERR_USAGE                      = os.EX_USAGE
@@ -546,6 +552,8 @@ class Witness(threading.Thread):
                 ERR_TREEHEAD_SIGNATURE_INVALID,
                 "ERROR: signature of current tree head invalid",
             )
+        LOG_TIME.set(new_tree_head.timestamp)
+        TREE_SIZE.set(new_tree_head.tree_size)
         err = sign_send_store_tree_head(
             self.signing_key, self.log_verification_key, new_tree_head
         )
