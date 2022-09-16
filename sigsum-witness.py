@@ -43,19 +43,19 @@ LOGGER = logging.getLogger("sigsum-witness")
 
 # Metrics
 SIGNING_ATTEMPTS = prometheus.Counter(
-    "sigsum_witness_signing_attempts", "Total number of signing attempts"
+    "sigsum_witness_signing_attempts_total", "Total number of signing attempts"
 )
 SIGNING_ERROR = prometheus.Counter(
-    "sigsum_witness_signing_errors", "Total number of signing error"
+    "sigsum_witness_signing_errors_total", "Total number of signing error"
 )
 LAST_SUCCESS = prometheus.Gauge(
-    "sigsum_witness_last_success", "Time of last successful signature"
+    "sigsum_witness_last_success_timestamp_seconds", "Time of last successful signature"
 )
-LOG_TIME = prometheus.Gauge(
-    "sigsum_witness_log_time_unixtime", "Latest tree-head timestamp from the log."
+LOG_TIMESTAMP = prometheus.Gauge(
+    "sigsum_witness_log_timestamp_seconds", "Latest tree-head timestamp from the log."
 )
-TREE_SIZE = prometheus.Gauge(
-    "sigsum_witness_tree_size", "Latest tree size from the log."
+LOG_TREE_SIZE = prometheus.Gauge(
+    "sigsum_witness_log_tree_size", "Latest tree size from the log."
 )
 
 ERR_OK                         = 0
@@ -538,6 +538,8 @@ class Witness(threading.Thread):
         new_tree_head, err = fetch_tree_head_and_verify(self.log_verification_key)
         if err:
             return err
+        LOG_TIMESTAMP.set(new_tree_head.timestamp)
+        LOG_TREE_SIZE.set(new_tree_head.tree_size)
         now = floor(time.time())
         err = new_tree_head.timestamp_valid(now)
         if err:
@@ -554,8 +556,6 @@ class Witness(threading.Thread):
                 ERR_TREEHEAD_SIGNATURE_INVALID,
                 "ERROR: signature of current tree head invalid",
             )
-        LOG_TIME.set(new_tree_head.timestamp)
-        TREE_SIZE.set(new_tree_head.tree_size)
         err = sign_send_store_tree_head(
             self.signing_key, self.log_verification_key, new_tree_head
         )
