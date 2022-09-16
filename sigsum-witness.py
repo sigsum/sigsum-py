@@ -16,23 +16,47 @@
 # sigkey = nacl.signing.SigningKey('badc0ffee123456...', nacl.encoding.HexEncoder)
 # sigkey.verify_key.encode(nacl.encoding.HexEncoder)
 
-import sys
-import os
-from stat import *
 import argparse
-import requests
+import logging
+import os
 import struct
-from binascii import hexlify, unhexlify
-import nacl.encoding
-import nacl.signing
-from hashlib import sha256
+import sys
+import threading
 import time
+from binascii import hexlify, unhexlify
+from hashlib import sha256
 from math import floor
 from pathlib import PurePath
+from stat import *
+
+import nacl.encoding
+import nacl.signing
+import prometheus_client as prometheus
+import requests
+
 from tools.libsigntools import ssh_to_sign
 
 BASE_URL_DEFAULT = 'http://poc.sigsum.org:4780/'
 CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/sigsum-witness/')
+
+LOGGER = logging.getLogger("sigsum-witness")
+
+# Metrics
+SIGNING_ATTEMPTS = prometheus.Counter(
+    "sigsum_witness_signing_attempts_total", "Total number of signing attempts"
+)
+SIGNING_ERROR = prometheus.Counter(
+    "sigsum_witness_signing_errors_total", "Total number of signing error"
+)
+LAST_SUCCESS = prometheus.Gauge(
+    "sigsum_witness_last_success_timestamp_seconds", "Time of last successful signature"
+)
+LOG_TIMESTAMP = prometheus.Gauge(
+    "sigsum_witness_log_timestamp_seconds", "Latest tree-head timestamp from the log."
+)
+LOG_TREE_SIZE = prometheus.Gauge(
+    "sigsum_witness_log_tree_size", "Latest tree size from the log."
+)
 
 ERR_OK                         = 0
 ERR_USAGE                      = os.EX_USAGE
@@ -49,6 +73,7 @@ ERR_SIGKEYFILE_MISSING         = 11
 ERR_SIGKEY_FORMAT              = 12
 ERR_NYI                        = 13
 ERR_COSIG_POST                 = 14
+ERR_TREEHEAD_SEEN              = 15
 
 class Parser:
     def __init__(self):
@@ -79,9 +104,40 @@ class Parser:
                        default='signing-key',
                        help="Signing key file, relative to $base_dir if not an absolute path (signing-key)")
 
-        p.add_argument('-u', '--base-url',
-                       default=BASE_URL_DEFAULT,
-                       help="Log base URL ({})".format(BASE_URL_DEFAULT))
+        p.add_argument(
+            "-u",
+            "--base-url",
+            default=BASE_URL_DEFAULT,
+            help="Log base URL ({})".format(BASE_URL_DEFAULT),
+        )
+
+        p.add_argument(
+            "-i",
+            "--interval",
+            action="store",
+            type=int,
+            default=30,
+            help="Interval between signing attempt, in seconds (30)",
+        )
+
+        p.add_argument(
+            "-v",
+            "--verbose",
+            action="store_const",
+            const=logging.DEBUG,
+            default=logging.INFO,
+            dest="log_level",
+            help="Increase verbosity",
+        )
+
+        p.add_argument(
+            "-p",
+            "--metrics-port",
+            action="store",
+            type=int,
+            default=8000,
+            help="Port of the HTTP server to expose Prometheus metrics.",
+        )
 
         self.parser = p
 
@@ -187,7 +243,7 @@ class TreeHead:
         if self.timestamp == prev.timestamp and \
            self.root_hash == prev.root_hash and \
            self.tree_size == prev.tree_size:
-            return (ERR_OK,
+            return (ERR_TREEHEAD_SEEN,
                     "INFO: Fetched head of tree of size {} already seen".format(prev.tree_size))
 
         if self.root_hash == prev.root_hash and \
@@ -454,6 +510,60 @@ def user_confirm(prompt):
         return True
     return False
 
+
+class Witness(threading.Thread):
+    def __init__(self, signing_key, log_verification_key, cur_tree_head):
+        super().__init__()
+        self.signing_key = signing_key
+        self.log_verification_key = log_verification_key
+        self.cur_tree_head = cur_tree_head
+        self.exit = threading.Event()
+
+    def run(self):
+        while not self.exit.wait(g_args.interval):
+            SIGNING_ATTEMPTS.inc()
+            try:
+                err = self.sign_once()
+            except Exception as e:
+                LOGGER.exception(e)
+                SIGNING_ERROR.inc()
+                continue
+            if err:
+                LOGGER.error(err[1])
+                SIGNING_ERROR.inc()
+            else:
+                LAST_SUCCESS.set_to_current_time()
+
+    def sign_once(self):
+        new_tree_head, err = fetch_tree_head_and_verify(self.log_verification_key)
+        if err:
+            return err
+        LOG_TIMESTAMP.set(new_tree_head.timestamp)
+        LOG_TREE_SIZE.set(new_tree_head.tree_size)
+        now = floor(time.time())
+        err = new_tree_head.timestamp_valid(now)
+        if err:
+            return err
+        err = new_tree_head.history_valid(self.cur_tree_head)
+        if err:
+            # We don't want to count an already signed treehead as an error
+            if err[0] == ERR_TREEHEAD_SEEN:
+                LOGGER.debug(err[1])
+                return
+            return err
+        if not self.cur_tree_head.signature_valid(self.log_verification_key):
+            return (
+                ERR_TREEHEAD_SIGNATURE_INVALID,
+                "ERROR: signature of current tree head invalid",
+            )
+        err = sign_send_store_tree_head(
+            self.signing_key, self.log_verification_key, new_tree_head
+        )
+        if err:
+            return err
+        self.cur_tree_head = new_tree_head
+
+
 def main(args):
     global g_args
     g_args = Parser()
@@ -463,6 +573,10 @@ def main(args):
     if g_args.save_config:
         # TODO write to config file
         return ERR_NYI, "ERROR: --save-config is not yet implemented"
+    logging.basicConfig(
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        level=g_args.log_level,
+    )
 
     now = floor(time.time())
     consistency_verified = False
@@ -502,20 +616,18 @@ def main(args):
             return (ERR_USAGE,
                     "ERROR: Valid tree head found: --bootstrap-log not allowed")
 
-    new_tree_head, err = fetch_tree_head_and_verify(log_verification_key)
-    if err: return err
+    # Start up the server to expose the metrics.
+    LOGGER.info(f"Starting metrics server on port {g_args.metrics_port}")
+    prometheus.start_http_server(g_args.metrics_port)
 
-    err = new_tree_head.timestamp_valid(now)
-    if err: return err
-
-    err = new_tree_head.history_valid(cur_tree_head)
-    if err: return err
-
-    if not cur_tree_head.signature_valid(log_verification_key):
-        return ERR_TREEHEAD_SIGNATURE_INVALID, "ERROR: signature of current tree head invalid"
-
-    err = sign_send_store_tree_head(signing_key, log_verification_key, new_tree_head)
-    if err: return err
+    LOGGER.info("Starting witness")
+    thread = Witness(signing_key, log_verification_key, cur_tree_head)
+    thread.start()
+    try:
+        time.sleep(100000)
+    except KeyboardInterrupt:
+        thread.exit.set()
+        thread.join()
 
     return 0, None
 
