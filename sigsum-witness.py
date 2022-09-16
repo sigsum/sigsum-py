@@ -547,8 +547,8 @@ class Witness(threading.Thread):
         err = new_tree_head.history_valid(self.cur_tree_head)
         if err:
             # We don't want to count an already signed treehead as an error
-            if err[0]== ERR_TREEHEAD_SEEN:
-                LOGGER.warning(err[1])
+            if err[0] == ERR_TREEHEAD_SEEN:
+                LOGGER.debug(err[1])
                 return
             return err
         if not self.cur_tree_head.signature_valid(self.log_verification_key):
