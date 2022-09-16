@@ -112,6 +112,7 @@ class Parser:
         )
 
         p.add_argument(
+            "-i",
             "--interval",
             action="store",
             type=int,
@@ -130,6 +131,7 @@ class Parser:
         )
 
         p.add_argument(
+            "-p",
             "--metrics-port",
             action="store",
             type=int,
