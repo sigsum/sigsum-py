@@ -26,6 +26,10 @@ idna==3.4
     #   requests
 iniconfig==1.1.1
     # via pytest
+mypy==0.982
+    # via -r requirements.dev.in
+mypy-extensions==0.4.3
+    # via mypy
 packaging==21.3
     # via pytest
 pluggy==1.0.0
@@ -59,9 +63,12 @@ toml==0.10.2
 tomli==2.0.1
     # via
     #   coverage
+    #   mypy
     #   pytest
 types-toml==0.10.8
     # via responses
+typing-extensions==4.4.0
+    # via mypy
 urllib3==1.26.12
     # via
     #   -r requirements.txt
