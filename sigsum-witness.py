@@ -19,14 +19,15 @@
 import argparse
 import logging
 import os
+import stat
 import struct
 import sys
 import threading
 import time
-from binascii import hexlify, unhexlify
+from binascii import hexlify
 from hashlib import sha256
 from math import floor
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from stat import *
 
 import nacl.encoding
@@ -34,6 +35,8 @@ import nacl.signing
 import prometheus_client as prometheus
 import requests
 
+import sigsum.ascii
+import sigsum.crypto
 from tools.libsigntools import ssh_to_sign
 
 BASE_URL_DEFAULT = 'http://poc.sigsum.org:4780/'
@@ -171,44 +174,39 @@ def parse_keyval(text):
 
 class TreeHead:
     def __init__(self, sth_data):
-        self._text = parse_keyval(sth_data)
-        assert(len(self._text) == 4)
-        assert('timestamp' in self._text)
-        assert('tree_size' in self._text)
-        assert('root_hash' in self._text)
-        assert('signature' in self._text)
+        self.__data = sigsum.ascii.loads(sth_data)
+        assert(len(self.__data) == 4)
+        assert('timestamp' in self.__data)
+        assert('tree_size' in self.__data)
+        assert('root_hash' in self.__data)
+        assert('signature' in self.__data)
 
     @property
     def timestamp(self):
-        return int(self._text['timestamp'])
+        return self.__data.getint('timestamp')
 
     @property
     def tree_size(self):
-        return int(self._text['tree_size'])
+        return self.__data.getint('tree_size')
 
     @property
     def root_hash(self):
-        return unhexlify(self._text['root_hash'])
+        return self.__data.getbytes('root_hash')
 
     def text(self):
-        text = 'timestamp={}\n'.format(self._text['timestamp'])
-        text += 'tree_size={}\n'.format(self._text['tree_size'])
-        text += 'root_hash={}\n'.format(self._text['root_hash'])
-        text += 'signature={}\n'.format(self._text['signature'])
-        return text.encode('ascii')
+        return sigsum.ascii.dumps(self.__data).encode('ascii')
 
     def to_signed_data(self, pubkey):
         namespace = 'tree_head:v0:{}@sigsum.org'.format(hexlify(sha256(pubkey.encode()).digest()).decode())
         msg = struct.pack('!QQ', self.timestamp, self.tree_size)
-        msg += unhexlify(self._text['root_hash'])
+        msg += self.root_hash
         assert(len(msg) == 8 + 8 + 32)
         return ssh_to_sign(namespace, 'sha256', sha256(msg).digest())
 
     def signature_valid(self, pubkey):
         # Guard against tree head with >1 signature -- don't try to
         # validate a cosigned tree head.
-        assert(type(self._text['signature']) is str)
-        sig = unhexlify(self._text['signature'])
+        sig = self.__data.getbytes('signature')
         assert(len(sig) == 64)
         data = self.to_signed_data(pubkey)
         try:
@@ -288,19 +286,18 @@ class ConsistencyProof():
     def __init__(self, old_size, new_size, consistency_proof_data):
         self._old_size = old_size
         self._new_size = new_size
-        self._text = parse_keyval(consistency_proof_data)
-        assert(len(self._text) == 1)
-        assert('consistency_path' in self._text)
+        self.__data = sigsum.ascii.loads(consistency_proof_data)
+        assert(len(self.__data) == 1)
+        assert('consistency_path' in self.__data)
 
     def old_size(self):
         return self._old_size
     def new_size(self):
         return self._new_size
+
     def path(self):
-        if type(self._text['consistency_path']) is list:
-            return [unhexlify(e) for e in self._text['consistency_path']]
-        else:
-            return [unhexlify(self._text['consistency_path'])]
+        return self.__data.getbytes('consistency_path', many=True)
+
 
 def make_base_dir_maybe():
     dirname = os.path.expanduser(g_args.base_dir)
@@ -409,13 +406,13 @@ def consistency_proof_valid(first, second, proof):
 
     return sn == 0 and fr == first.root_hash and sr == second.root_hash
 
-def sign_send_store_tree_head(signing_key, log_key, tree_head):
-    signature = signing_key.sign(tree_head.to_signed_data(log_key)).signature
-    hash = sha256(signing_key.verify_key.encode())
-
-    post_data = 'cosignature={}\n'.format(hexlify(signature).decode('ascii'))
-    post_data += 'key_hash={}\n'.format(hash.hexdigest())
-
+def sign_send_store_tree_head(signer, log_key, tree_head):
+    signature = signer.sign(tree_head.to_signed_data(log_key))
+    hash = sha256(signer.public())
+    post_data = sigsum.ascii.dumps({
+        'cosignature': signature.hex(),
+        'key_hash': hash.hexdigest(),
+    })
     try:
         req = requests.post(g_args.base_url + 'sigsum/v0/add-cosignature', post_data)
     except requests.ConnectionError as err:
@@ -450,58 +447,32 @@ def generate_and_store_sigkey(fn):
         os.chmod(f.fileno(), S_IRUSR)
         f.write(signing_key.encode(encoder=nacl.encoding.HexEncoder).decode('ascii'))
 
-def read_sigkeyfile(fn):
-    try:
-        check_sigkeyfile(fn)
-    except SigKeyFileError as err:
-        return None, (ERR_SIGKEYFILE, str(err))
-    with open(fn, 'r') as f:
-        try:
-            signing_key = nacl.signing.SigningKey(f.readline().strip(), nacl.encoding.HexEncoder)
-        except:
-            return None, (ERR_SIGKEY_FORMAT,
-                          "ERROR: Invalid signing key in {}".format(fn))
-
-    assert(signing_key is not None)
-    return signing_key, None
-
-
-def check_sigkeyfile(fn):
-    try:
-        s = os.stat(fn, follow_symlinks=True)
-    except FileNotFoundError:
-        raise SigKeyFileError(f"ERROR: File not found: {fn}")
-    if not S_ISREG(s.st_mode):
-        raise SigKeyFileError(f"ERROR: Signing key file {fn} must be a regular file")
-    if S_IMODE(s.st_mode) & 0o077 != 0:
-        raise SigKeyFileError(f"ERROR: Signing key file {fn} permissions too lax: {S_IMODE(s.st_mode):04o}")
-
-
-class SigKeyFileError(Exception):
-    pass
-
 
 # Read signature key from file, or generate one and write it to file.
-def ensure_sigkey(fn):
+def ensure_sigkey(fn, generate: bool):
+    if generate:
+        if fn.exists():
+            die(ERR_USAGE, f"Signing key file {fn} already existing")
+        if user_confirm(f"Really generate a new signing key and store it in {fn}?"):
+            generate_and_store_sigkey(fn)
     try:
-        os.stat(fn, follow_symlinks=False)
+        check_keyfile_permission(fn)
+        return sigsum.crypto.KeyfileSigner(fn)
     except FileNotFoundError:
-        if not g_args.generate_signing_key:
-            return None, (ERR_SIGKEYFILE_MISSING,
-                          "ERROR: Signing key file {} missing. "
-                          "Use --generate-signing-key to create one.".format(fn))
+        die(
+            ERR_SIGKEYFILE_MISSING,
+            f"Signing key file {fn} missing. Use --generate-signing-key to create one.",
+        )
+    except IsADirectoryError:
+        die(ERR_SIGKEYFILE, f"Signing key file {fn} must be a regular file.")
+    except sigsum.crypto.KeyfileError:
+        die(ERR_SIGKEY_FORMAT, f"Invalid signing key in {fn}")
 
-        if not user_confirm("Really generate a new signing key and store it in {}?".format(fn)):
-            return None, (ERR_SIGKEYFILE_MISSING,
-                          "ERROR: Signing key file {} missing".format(fn))
 
-        generate_and_store_sigkey(fn)
-        return read_sigkeyfile(fn)
-
-    if g_args.generate_signing_key:
-        return None, (ERR_USAGE,
-                      "ERROR: Signing key file {} already existing".format(fn))
-    return read_sigkeyfile(fn)
+def check_keyfile_permission(fp):
+    perm = stat.S_IMODE(fp.stat().st_mode)
+    if perm & 0o077 != 0:
+        die(ERR_SIGKEYFILE, f"Signing key file {fp} permissions too lax: {perm:04o}.")
 
 
 def user_confirm(prompt):
@@ -512,9 +483,9 @@ def user_confirm(prompt):
 
 
 class Witness(threading.Thread):
-    def __init__(self, signing_key, log_verification_key, cur_tree_head):
+    def __init__(self, signer, log_verification_key, cur_tree_head):
         super().__init__()
-        self.signing_key = signing_key
+        self.signer = signer
         self.log_verification_key = log_verification_key
         self.cur_tree_head = cur_tree_head
         self.exit = threading.Event()
@@ -553,12 +524,12 @@ class Witness(threading.Thread):
             return err
         if not self.cur_tree_head.signature_valid(self.log_verification_key):
             return (
-                ERR_TREEHEAD_SIGNATURE_INVALID,
-                "ERROR: signature of current tree head invalid",
-            )
+                    ERR_TREEHEAD_SIGNATURE_INVALID,
+                    "ERROR: signature of current tree head invalid",
+                    )
         err = sign_send_store_tree_head(
-            self.signing_key, self.log_verification_key, new_tree_head
-        )
+                self.signer, self.log_verification_key, new_tree_head
+                )
         if err:
             return err
         self.cur_tree_head = new_tree_head
@@ -574,9 +545,9 @@ def main(args):
         # TODO write to config file
         return ERR_NYI, "ERROR: --save-config is not yet implemented"
     logging.basicConfig(
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        level=g_args.log_level,
-    )
+            format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+            level=g_args.log_level,
+            )
 
     now = floor(time.time())
     consistency_verified = False
@@ -587,8 +558,9 @@ def main(args):
     log_verification_key, err = ensure_log_verification_key()
     if err: return err
 
-    signing_key, err = ensure_sigkey(str(PurePath(g_args.base_dir, g_args.sigkey_file)))
-    if err: return err
+    signer = ensure_sigkey(
+        Path(g_args.base_dir, g_args.sigkey_file), g_args.generate_signing_key
+    )
 
     cur_tree_head, err = read_tree_head_and_verify(log_verification_key)
     if err:
@@ -607,7 +579,7 @@ def main(args):
                                                                               new_tree_head.tree_size))
         if user_confirm("Really sign head for tree of size {} and upload "
                         "the signature?".format(new_tree_head.tree_size)):
-            err3 = sign_send_store_tree_head(signing_key, log_verification_key, new_tree_head)
+            err3 = sign_send_store_tree_head(signer, log_verification_key, new_tree_head)
             if err3: return err3
 
         return 0, None
@@ -621,7 +593,7 @@ def main(args):
     prometheus.start_http_server(g_args.metrics_port)
 
     LOGGER.info("Starting witness")
-    thread = Witness(signing_key, log_verification_key, cur_tree_head)
+    thread = Witness(signer, log_verification_key, cur_tree_head)
     thread.start()
     try:
         time.sleep(100000)
@@ -630,6 +602,12 @@ def main(args):
         thread.join()
 
     return 0, None
+
+
+def die(code, msg=None):
+    if msg:
+        print("ERROR:", msg, file=sys.stderr)
+    sys.exit(code)
 
 if __name__ == '__main__':
     status = main(sys.argv)
