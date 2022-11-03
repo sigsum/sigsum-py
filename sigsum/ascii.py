@@ -3,13 +3,12 @@ import io
 
 def dumps(data):
     """
-    dumps takes a key/values mapping and serializes it to ASCII.
+    dumps takes a list of key/values tuples, and serializes it to ASCII.
     If one of the values is not of type str, int or bytes (or a list of those)
     a TypeError is raised.
     """
     res = io.StringIO()
-    for key in data:
-        values = data[key]
+    for [key, values] in data:
         if not isinstance(values, list):
             values = [values]
         for val in values:
