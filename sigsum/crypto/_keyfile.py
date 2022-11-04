@@ -1,5 +1,4 @@
 import pathlib
-import typing
 
 import nacl.encoding
 import nacl.signing
@@ -7,14 +6,6 @@ import nacl.signing
 
 class KeyfileError(Exception):
     pass
-
-
-class Signer(typing.Protocol):
-    def sign(self, msg: bytes) -> bytes:
-        pass
-
-    def public(self) -> bytes:
-        pass
 
 
 class KeyfileSigner:

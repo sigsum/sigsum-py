@@ -1,6 +1,6 @@
 ---
 before_script:
-- apt-get update -qq && apt-get install -y -qq tox
+- apt-get update -qq && apt-get install -y -qq tox ssh
 
 tox:
   script:
