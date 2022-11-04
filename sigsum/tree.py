@@ -9,27 +9,31 @@ from .ascii import dumps, loads
 
 class TreeHead:
     def __init__(self, sth_data):
-        self.__data = loads(sth_data)
-        assert(len(self.__data) == 4)
-        assert('timestamp' in self.__data)
-        assert('tree_size' in self.__data)
-        assert('root_hash' in self.__data)
-        assert('signature' in self.__data)
+        lines = sth_data.splitlines()
+        assert(len(lines) == 4)
+
+        self.__timestamp = ascii.parse_int(lines[0], "timestamp")
+        self.__tree_size = ascii.parse_int(lines[1], "tree_size")
+        self.__root_hash = ascii.parse_hash(lines[2], "root_hash")
+        self.__signature = ascii.parse_signature(lines[3], "signature")
 
     @property
     def timestamp(self):
-        return self.__data.getint('timestamp')
+        return self.__timestamp
 
     @property
     def tree_size(self):
-        return self.__data.getint('tree_size')
+        return self.__tree_size
 
     @property
     def root_hash(self):
-        return self.__data.getbytes('root_hash')
+        return self.__root_hash
 
     def text(self):
-        return dumps(self.__data).encode('ascii')
+        return sigsum.ascii.dumps([("timestamp", self.timestamp),
+                                   ("tree_size", self.tree_size),
+                                   ("root_hash", self.root_hash),
+                                   ("signature", self.signature)]).encode('ascii')
 
     def to_signed_data(self, pubkey):
         namespace = "tree-head:v0@sigsum.org"
@@ -40,13 +44,9 @@ class TreeHead:
         return ssh_to_sign(namespace, 'sha256', sha256(msg).digest())
 
     def signature_valid(self, pubkey):
-        # Guard against tree head with >1 signature -- don't try to
-        # validate a cosigned tree head.
-        sig = self.__data.getbytes('signature')
-        assert(len(sig) == 64)
         data = self.to_signed_data(pubkey)
         try:
-            verified_data = pubkey.verify(sig + data)
+            verified_data = pubkey.verify(self.__signature + data)
         except nacl.exceptions.BadSignatureError:
             return False
         assert(verified_data == data)
@@ -57,9 +57,9 @@ class ConsistencyProof:
     def __init__(self, old_size, new_size, consistency_proof_data):
         self.__old_size = old_size
         self.__new_size = new_size
-        self.__data = loads(consistency_proof_data)
-        assert(len(self.__data) == 1)
-        assert('consistency_path' in self.__data)
+        self.__path = []
+        for line in txt.splitlines():
+            self.__path.append ascii.parse_hash(line, "consistency_path")
 
     def old_size(self):
         return self.__old_size
@@ -67,4 +67,4 @@ class ConsistencyProof:
         return self.__new_size
 
     def path(self):
-        return self.__data.getbytes('consistency_path', many=True)
+        return self.__path
