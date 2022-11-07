@@ -17,7 +17,7 @@ License.
 Use pip to install development dependencies:
 
 ```
-pip -r requirements.dev.txt
+pip install -r requirements.dev.txt
 ```
 
 
