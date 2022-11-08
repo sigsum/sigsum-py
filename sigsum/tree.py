@@ -4,8 +4,7 @@ from hashlib import sha256
 import nacl.exceptions
 from tools.libsigntools import ssh_to_sign
 
-from .ascii import dumps, loads
-
+from . import ascii
 
 class TreeHead:
     def __init__(self, sth_data):
@@ -30,10 +29,10 @@ class TreeHead:
         return self.__root_hash
 
     def text(self):
-        return sigsum.ascii.dumps([("timestamp", self.timestamp),
-                                   ("tree_size", self.tree_size),
-                                   ("root_hash", self.root_hash),
-                                   ("signature", self.signature)]).encode('ascii')
+        return ascii.dumps([("timestamp", self.timestamp),
+                            ("tree_size", self.tree_size),
+                            ("root_hash", self.root_hash),
+                            ("signature", self.signature)]).encode('ascii')
 
     def to_signed_data(self, pubkey):
         namespace = "tree-head:v0@sigsum.org"
@@ -58,8 +57,8 @@ class ConsistencyProof:
         self.__old_size = old_size
         self.__new_size = new_size
         self.__path = []
-        for line in txt.splitlines():
-            self.__path.append ascii.parse_hash(line, "consistency_path")
+        for line in consistency_proof_data.splitlines():
+            self.__path.append(ascii.parse_hash(line, "consistency_path"))
 
     def old_size(self):
         return self.__old_size

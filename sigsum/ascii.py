@@ -25,7 +25,7 @@ def dumps(data):
 
 def parse_line(line, name, count):
     prefix = name + "="
-    if not line.startswith(prefx):
+    if not line.startswith(prefix):
         raise ASCIIDecodeError("Expecting '" + prefix+ "' line")
     values = line[len(prefix):].split(" ")
     if len(values) != count:
@@ -51,7 +51,7 @@ def parse_int(line, name):
     v = parse_line(line, name, 1)
     if len(v[0]) == 0 or len(v[0]) > len(str(1<<63)) or not v[0][0].isdigit():
         raise ascii.ASCIIDecodeError("invalid decimal integer: " + v[0])
-    i = int(v)
+    i = int(v[0])
     if i >= (1<<63):
         raise ascii.ASCIIDecodeError("decimal integer too large: " + v[0])
     return i
