@@ -20,11 +20,9 @@ import argparse
 import logging
 import os
 import stat
-import struct
 import sys
 import threading
 import time
-from binascii import hexlify
 from hashlib import sha256
 from math import floor
 from pathlib import Path, PurePath
@@ -38,7 +36,6 @@ import requests
 import sigsum.ascii
 import sigsum.crypto
 import sigsum.tree
-from tools.libsigntools import ssh_to_sign
 
 BASE_URL_DEFAULT = 'http://poc.sigsum.org:4780/'
 CONFIG_DIR_DEFAULT = os.path.expanduser('~/.config/sigsum-witness/')
@@ -250,7 +247,7 @@ def make_base_dir_maybe():
 def read_tree_head(filename):
     try:
         with open(filename, mode='r') as f:
-            return tree.TreeHead(f.read())
+            return sigsum.tree.TreeHead(f.read())
     except FileNotFoundError:
         return None
 
@@ -281,7 +278,7 @@ def fetch_tree_head_and_verify(log_verification_key):
         return None, (ERR_TREEHEAD_FETCH,
                       "ERROR: unable to fetch new tree head: {}".format(req.status_code))
 
-    tree_head = tree.TreeHead(req.content.decode())
+    tree_head = sigsum.tree.TreeHead(req.content.decode())
     if not tree_head.signature_valid(log_verification_key):
         return None, (ERR_TREEHEAD_SIGNATURE_INVALID,
                       "ERROR: signature of fetched tree head invalid")
@@ -297,7 +294,7 @@ def fetch_consistency_proof(first, second):
     if req.status_code != 200:
         return None, (ERR_CONSISTENCYPROOF_FETCH,
                       "ERROR: unable to fetch consistency proof: {}".format(req.status_code))
-    return tree.ConsistencyProof(first, second, req.content.decode()), None
+    return sigsum.tree.ConsistencyProof(first, second, req.content.decode()), None
 
 def numbits(n):
     p = 0

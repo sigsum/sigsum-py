@@ -1,4 +1,11 @@
-from .ascii import loads, dumps
+import struct
+from hashlib import sha256
+
+import nacl.exceptions
+from tools.libsigntools import ssh_to_sign
+
+from .ascii import dumps, loads
+
 
 class TreeHead:
     def __init__(self, sth_data):
@@ -25,8 +32,10 @@ class TreeHead:
         return dumps(self.__data).encode('ascii')
 
     def to_signed_data(self, pubkey):
-        namespace = 'tree_head:v0:{}@sigsum.org'.format(hexlify(sha256(pubkey.encode()).digest()).decode())
-        msg = struct.pack('!QQ', self.timestamp, self.tree_size)
+        namespace = "tree_head:v0:{}@sigsum.org".format(
+            sha256(pubkey.encode()).digest().hex()
+        )
+        msg = struct.pack("!QQ", self.timestamp, self.tree_size)
         msg += self.root_hash
         assert(len(msg) == 8 + 8 + 32)
         return ssh_to_sign(namespace, 'sha256', sha256(msg).digest())
@@ -44,7 +53,8 @@ class TreeHead:
         assert(verified_data == data)
         return True
 
-class ConsistencyProof():
+
+class ConsistencyProof:
     def __init__(self, old_size, new_size, consistency_proof_data):
         self.__old_size = old_size
         self.__new_size = new_size
