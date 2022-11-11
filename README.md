@@ -10,6 +10,24 @@ The full license text can be found in the file LICENSE.
 This license is also known as the BSD-2-Clause and the Simplified BSD
 License.
 
+
+## Usage
+
+### Use with ssh-agent
+
+The witness supports using an ssh-agent to perform signing operation.  This
+allow the private key material to be better protected by e.g. running the agent
+with a separate user, or accessing a hardware token. The agent should have
+exactly one key of type ed25519.
+
+E.g.:
+```
+ssh-keygen -t ed25519 -N '' -f my-ed25519-key
+eval $(ssh-agent)
+ssh-add my-ed25519-key
+python sigsum-witness.py --ssh-agent ...
+```
+
 ## Hacking
 
 ### Installing dependencies

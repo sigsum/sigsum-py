@@ -101,9 +101,17 @@ class Parser:
                        action='store_true',
                        help="Save command line options to the configuration file")
 
-        p.add_argument('-s', '--sigkey-file',
-                       default='signing-key',
-                       help="Signing key file, relative to $base_dir if not an absolute path (signing-key)")
+        p.add_argument(
+            "-s",
+            "--sigkey-file",
+            default="signing-key",
+            help="Signing key file, relative to $base_dir if not an absolute path (signing-key)",
+        )
+        p.add_argument(
+            "--ssh-agent",
+            action="store_true",
+            help="Use ssh-agent.  The agent must already be running and have exactly one key of type ed25519.",
+        )
 
         p.add_argument(
             "-u",
@@ -496,9 +504,18 @@ def main(args):
     log_verification_key, err = ensure_log_verification_key()
     if err: return err
 
-    signer = ensure_sigkey(
-        Path(g_args.base_dir, g_args.sigkey_file), g_args.generate_signing_key
-    )
+    if g_args.ssh_agent:
+        sock = os.getenv("SSH_AUTH_SOCK")
+        if not sock:
+            die(ERR_USAGE, "SSH_AUTH_SOCK is not set")
+        try:
+            signer = sigsum.crypto.SSHAgentSigner(sock)
+        except sigsum.crypto.SSHAgentError as e:
+            die(ERR_USAGE, str(e))
+    else:
+        signer = ensure_sigkey(
+            Path(g_args.base_dir, g_args.sigkey_file), g_args.generate_signing_key
+        )
 
     cur_tree_head, err = read_tree_head_and_verify(log_verification_key)
     if err:
@@ -531,6 +548,7 @@ def main(args):
     prometheus.start_http_server(g_args.metrics_port)
 
     LOGGER.info("Starting witness")
+    LOGGER.info(f"Public key: {signer.public().hex()}")
     thread = Witness(signer, log_verification_key, cur_tree_head)
     thread.start()
     try:
