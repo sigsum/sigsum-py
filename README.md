@@ -1,14 +1,16 @@
 # sigsum-witness-py
 An implementation of a witness that cosigns a sigsum log.
 
-## License
+## Installation
 
-This code is licensed under the 2-Clause BSD License.
+### From git
 
-The full license text can be found in the file LICENSE.
+Install the sigsum witness directly from the git repository using pip:
 
-This license is also known as the BSD-2-Clause and the Simplified BSD
-License.
+```
+pip install git+https://git.glasklar.is/sigsum/core/sigsum-py.git
+```
+
 
 
 ## Usage
@@ -30,33 +32,50 @@ python sigsum-witness.py --ssh-agent ...
 
 ## Hacking
 
-### Installing dependencies
+### Setup
 
-Use pip to install development dependencies:
-
-```
-pip install -r requirements.dev.txt
-```
-
-
-### Running tests
-
-Use [`pytest`](https://docs.pytest.org/) to run the automated tests:
+We use [poetry](https://python-poetry.org/), to manage dependencies. It might
+be available as an OS package in your distribution, otherwise you can use pip
+to install it. E.g. to install poetry with pip for the current user:
 
 ```
-$ pytest .
+pip install --user poetry
+```
+
+Poetry automatically creates and manages a virtual environement for each
+project. So once it is installed, you can setup your project environment
+by installing the dependencies with:
+
+```
+poetry install
+```
+
+### Running things locally
+
+You can then run commands in the local virtual environment with `poetry run`.
+This can be used to start a local witness:
+```
+poetry run sigsum-witness
+```
+
+Or to run tests with [pytest](https://pytest.org/):
+```
+$ poetry run pytest
 ```
 
 ### Updating dependencies
 
-Direct runtime (resp. development) dependencies are specified in
-`requirements.in` (resp. `requirements.dev.in`) and we use `pip-compile` to pin
-the full dependency tree in `requirements.txt` (resp. `requirements.dev.txt`.)
+Direct runtime and development dependencies are specified in `pyproject.toml`
+and poetry will pin the full dependency tree in `poetry.lock`.  To update
+dependencies to the latest version compatible with `pyproject.toml`, use
+`poetry update <package>` (leave out the package name to update all
+dependencies.)
 
-Note that `requirements.dev.txt` depends on `requirements.txt`, so they need to
-be rebuilt in the correct order:
+## License
 
-```
-pip-compile requirements.in
-pip-compile requirements.dev.in
-```
+This code is licensed under the 2-Clause BSD License.
+
+The full license text can be found in the file LICENSE.
+
+This license is also known as the BSD-2-Clause and the Simplified BSD
+License.
