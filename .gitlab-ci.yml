@@ -1,7 +1,12 @@
 ---
-before_script:
-- apt-get update -qq && apt-get install -y -qq tox ssh
+image: python:3.10-bullseye
 
-tox:
+before_script:
+- apt-get update -qq && apt-get install -y -qq ssh
+
+tests:
   script:
-  - tox
+  - pip install poetry==1.1.13
+  - poetry install
+  - poetry run mypy sigsum
+  - poetry run pytest --cov

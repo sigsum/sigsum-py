@@ -484,15 +484,16 @@ class Witness(threading.Thread):
         self.cur_tree_head = new_tree_head
 
 
-def main(args):
+def main():
     global g_args
     g_args = Parser()
+    args = sys.argv
     parse_args(args)            # get base_dir
     parse_config(str(PurePath(g_args.base_dir, 'sigsum-witness.conf')))
     parse_args(args)            # override config file options
     if g_args.save_config:
         # TODO write to config file
-        return ERR_NYI, "ERROR: --save-config is not yet implemented"
+        die(ERR_NYI, "--save-config is not yet implemented")
     logging.basicConfig(
             format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
             level=g_args.log_level,
@@ -505,7 +506,8 @@ def main(args):
     make_base_dir_maybe()
 
     log_verification_key, err = ensure_log_verification_key()
-    if err: return err
+    if err:
+        die(*err)
 
     if g_args.ssh_agent:
         sock = os.getenv("SSH_AUTH_SOCK")
@@ -523,10 +525,11 @@ def main(args):
     cur_tree_head, err = read_tree_head_and_verify(log_verification_key)
     if err:
         new_tree_head, err2 = fetch_tree_head_and_verify(log_verification_key)
-        if err2: return err2
+        if err2:
+            die(*err2)
 
         if not g_args.bootstrap_log:
-            return err
+            die(*err)
 
         print("\nWARNING: We have only seen one single tree head from the\n"
               "log {},\n"
@@ -538,13 +541,12 @@ def main(args):
         if user_confirm("Really sign head for tree of size {} and upload "
                         "the signature?".format(new_tree_head.tree_size)):
             err3 = sign_send_store_tree_head(signer, log_verification_key, new_tree_head)
-            if err3: return err3
+            if err3:
+                die(*err3)
 
-        return 0, None
-    else:
-        if g_args.bootstrap_log:
-            return (ERR_USAGE,
-                    "ERROR: Valid tree head found: --bootstrap-log not allowed")
+        return
+    if g_args.bootstrap_log:
+        die(ERR_USAGE, "Valid tree head found: --bootstrap-log not allowed")
 
     # Start up the server to expose the metrics.
     LOGGER.info(f"Starting metrics server on port {g_args.metrics_port}")
@@ -565,16 +567,13 @@ def main(args):
             thread.exit.set()
             thread.join()
 
-    return 0, None
-
 
 def die(code, msg=None):
     if msg:
         print("ERROR:", msg, file=sys.stderr)
     sys.exit(code)
 
+
+
 if __name__ == '__main__':
-    status = main(sys.argv)
-    if status[1]:
-        print(status[1])
-    sys.exit(status[0])
+    main()

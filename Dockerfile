@@ -1,5 +1,5 @@
 FROM python:3.10
-COPY . /srv
-WORKDIR /srv
-RUN pip install --no-cache-dir -r requirements.txt
-CMD ["python", "sigsum-witness.py"]
+WORKDIR /srv/sigsum-witness
+COPY . /srv/sigsum-witness
+RUN pip install --no-cache-dir .
+ENTRYPOINT ["sigsum-witness"]
