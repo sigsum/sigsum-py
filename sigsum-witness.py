@@ -279,7 +279,7 @@ def store_tree_head(tree_head):
 
 def fetch_tree_head_and_verify(log_verification_key):
     try:
-        req = requests.get(g_args.base_url + 'sigsum/v0/get-tree-head-to-cosign')
+        req = requests.get(g_args.base_url + 'get-tree-head-to-cosign')
     except requests.ConnectionError as err:
         return None, (ERR_TREEHEAD_FETCH, f"ERROR: unable to fetch new tree head: {err}")
     if req.status_code != 200:
@@ -294,7 +294,7 @@ def fetch_tree_head_and_verify(log_verification_key):
     return tree_head, None
 
 def fetch_consistency_proof(first, second):
-    url = g_args.base_url + 'sigsum/v0/get-consistency-proof/{}/{}'.format(first, second)
+    url = g_args.base_url + 'get-consistency-proof/{}/{}'.format(first, second)
     try:
         req = requests.get(url)
     except requests.ConnectionError as err:
@@ -360,7 +360,7 @@ def sign_send_store_tree_head(signer, log_key, tree_head):
         'key_hash': hash.hexdigest(),
     })
     try:
-        req = requests.post(g_args.base_url + 'sigsum/v0/add-cosignature', post_data)
+        req = requests.post(g_args.base_url + 'add-cosignature', post_data)
     except requests.ConnectionError as err:
         return (ERR_COSIG_POST, f"ERROR: Unable to post signature to log: {err}")
     if req.status_code != 200:
