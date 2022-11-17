@@ -73,6 +73,7 @@ add_leaf 2
 wait_tree_head 2
 
 chmod go-rx witness-key.private
+yes | ../sigsum-witness.py -u http://localhost:6965/ -d $(pwd) --bootstrap-log -s witness-key.private -l $(cat log-key.public) -i 5 -v
 ../sigsum-witness.py -u http://localhost:6965/ -d $(pwd) -s witness-key.private -l $(cat log-key.public) -i 5 -v
 
 exit 1
