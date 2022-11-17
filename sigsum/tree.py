@@ -32,12 +32,11 @@ class TreeHead:
         return dumps(self.__data).encode('ascii')
 
     def to_signed_data(self, pubkey):
-        namespace = "tree_head:v0:{}@sigsum.org".format(
-            sha256(pubkey.encode()).digest().hex()
-        )
+        namespace = "tree-head:v0@sigsum.org"
         msg = struct.pack("!QQ", self.timestamp, self.tree_size)
         msg += self.root_hash
-        assert(len(msg) == 8 + 8 + 32)
+        msg += sha256(pubkey.encode()).digest()
+        assert(len(msg) == 8 + 8 + 32 + 32)
         return ssh_to_sign(namespace, 'sha256', sha256(msg).digest())
 
     def signature_valid(self, pubkey):
