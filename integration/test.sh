@@ -65,6 +65,17 @@ function wait_tree_head() {
     return 1
 }
 
+function wait_cosigned_tree_head() {
+    local i
+    for i in $(seq 20) ; do
+	if curl -sS http://localhost:6965/get-tree-head-cosigned |tee response | grep "^tree_size=$1"'$' >/dev/null ; then
+	    return 0
+	fi
+	sleep 1
+    done
+    return 1
+}
+
 wait_tree_head 0
 
 add_leaf 1
@@ -74,6 +85,15 @@ wait_tree_head 2
 
 chmod go-rx witness-key.private
 yes | ../sigsum-witness.py -u http://localhost:6965/ -d $(pwd) --bootstrap-log -s witness-key.private -l $(cat log-key.public) -i 5 -v
-../sigsum-witness.py -u http://localhost:6965/ -d $(pwd) -s witness-key.private -l $(cat log-key.public) -i 5 -v
+wait_cosigned_tree_head 2
 
-exit 1
+add_leaf 3
+add_leaf 4
+wait_tree_head 4
+
+../sigsum-witness.py -u http://localhost:6965/ -d $(pwd) --once -s witness-key.private -l $(cat log-key.public) -v
+wait_cosigned_tree_head 4
+
+echo >&2 All good
+
+exit 0
