@@ -86,6 +86,10 @@ class Parser:
                        help="Sign and save fetched tree head without verifying a consistency proof against a previous tree head. "
                        "NOTE: Requires user intervention.")
 
+        p.add_argument("--once",
+                       action='store_true',
+                       help="Verify and cosign the most recent tree head, and then exit.")
+
         p.add_argument('-d', '--base-dir',
                        default=CONFIG_DIR_DEFAULT,
                        help="Configuration directory ({})".format(CONFIG_DIR_DEFAULT))
@@ -549,12 +553,17 @@ def main(args):
     LOGGER.info("Starting witness")
     LOGGER.info(f"Public key: {signer.public().hex()}")
     thread = Witness(signer, log_verification_key, cur_tree_head)
-    thread.start()
-    try:
-        time.sleep(100000)
-    except KeyboardInterrupt:
-        thread.exit.set()
-        thread.join()
+    if g_args.once:
+        err = thread.sign_once()
+        if err:
+            die(1, err[1])
+    else:
+        thread.start()
+        try:
+            time.sleep(100000)
+        except KeyboardInterrupt:
+            thread.exit.set()
+            thread.join()
 
     return 0, None
 
