@@ -7,7 +7,7 @@ export GOPATH="$(pwd)/.go-deps"
 mkdir -p "$GOPATH"
 
 # Install sigsum tools.
-go install sigsum.org/log-go/cmd/sigsum-log-primary@memory-db
+go install sigsum.org/log-go/cmd/sigsum-log-primary@main
 go install sigsum.org/sigsum-go/cmd/sigsum-debug@latest
 
 ln -sf "$GOPATH/bin/sigsum-debug" .
@@ -84,16 +84,14 @@ add_leaf 2
 wait_tree_head 2
 
 chmod go-rx witness-key.private
-yes | ../sigsum-witness.py -u http://localhost:6965/ -d $(pwd) --bootstrap-log -s witness-key.private -l $(cat log-key.public) -i 5 -v
+yes | ../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --bootstrap-log -s witness-key.private -l $(cat log-key.public) -i 5 -v
 wait_cosigned_tree_head 2
 
 add_leaf 3
 add_leaf 4
 wait_tree_head 4
 
-../sigsum-witness.py -u http://localhost:6965/ -d $(pwd) --once -s witness-key.private -l $(cat log-key.public) -v
+../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --once -s witness-key.private -l $(cat log-key.public) -v
 wait_cosigned_tree_head 4
-
-echo >&2 All good
 
 exit 0
