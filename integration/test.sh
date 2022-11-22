@@ -7,8 +7,8 @@ export GOPATH="$(pwd)/.go-deps"
 mkdir -p "$GOPATH"
 
 # Install sigsum tools.
-go install sigsum.org/log-go/cmd/sigsum-log-primary@main
-go install sigsum.org/sigsum-go/cmd/sigsum-debug@latest
+go install sigsum.org/log-go/cmd/sigsum-log-primary@v0.6.1
+go install sigsum.org/sigsum-go/cmd/sigsum-debug@v0.1.8
 
 ln -sf "$GOPATH/bin/sigsum-debug" .
 ln -sf "$GOPATH/bin/sigsum-log-primary" .
