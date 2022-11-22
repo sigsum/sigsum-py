@@ -53,11 +53,11 @@ function add_leaf () {
     } | curl -sS --data-binary @- http://localhost:6965/add-leaf >&2
 }
 
-# Wait for a tree head of size 
+# wait_tree_head N waits for a tree head of size N
 function wait_tree_head() {
     local i
     for i in $(seq 20) ; do
-	if curl -sS http://localhost:6965/get-tree-head-to-cosign |tee response | grep "^tree_size=$1"'$' >/dev/null ; then
+	if curl -sS http://localhost:6965/get-tree-head-to-cosign | grep "^tree_size=$1"'$' >/dev/null ; then
 	    return 0
 	fi
 	sleep 1
@@ -65,10 +65,11 @@ function wait_tree_head() {
     return 1
 }
 
+# wait_cosigned_tree_head N waits for a tree head of size N
 function wait_cosigned_tree_head() {
     local i
     for i in $(seq 20) ; do
-	if curl -sS http://localhost:6965/get-tree-head-cosigned |tee response | grep "^tree_size=$1"'$' >/dev/null ; then
+	if curl -sS http://localhost:6965/get-tree-head-cosigned | grep "^tree_size=$1"'$' >/dev/null ; then
 	    return 0
 	fi
 	sleep 1
