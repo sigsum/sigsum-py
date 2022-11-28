@@ -3,15 +3,11 @@
 set -e
 
 # Use a local directory for go deps
-export GOPATH="$(pwd)/.go-deps"
-mkdir -p "$GOPATH"
+export GOBIN="$(pwd)"
 
 # Install sigsum tools.
 go install sigsum.org/log-go/cmd/sigsum-log-primary@v0.6.1
 go install sigsum.org/sigsum-go/cmd/sigsum-debug@v0.1.8
-
-ln -sf "$GOPATH/bin/sigsum-debug" .
-ln -sf "$GOPATH/bin/sigsum-log-primary" .
 
 ./sigsum-debug key private > log-key.private
 cat log-key.private | ./sigsum-debug key public > log-key.public
