@@ -49,7 +49,9 @@ def parse_signature(line, name):
 
 def parse_int(line, name):
     v = parse_line(line, name, 1)
-    if len(v[0]) == 0 or len(v[0]) > len(str(1<<63)) or not v[0][0].isdigit():
+    # Conversion using int() below allows negative numbers and bignums,
+    # so first reject leading minus sign and very large values.
+    if len(v[0]) > len(str(1<<63)) or not v[0][0].isdigit():
         raise ascii.ASCIIDecodeError("invalid decimal integer: " + v[0])
     i = int(v[0])
     if i >= (1<<63):

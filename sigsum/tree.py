@@ -9,8 +9,10 @@ from . import ascii
 class TreeHead:
     def __init__(self, sth_data):
         lines = sth_data.splitlines()
-        assert(len(lines) == 4)
-
+        if len(lines) != 4:
+            raise ascii.ASCIIDecodeError(
+                "Expecting four lines for a signed tree head, got "
+                + string(len(lines)))
         self.__timestamp = ascii.parse_int(lines[0], "timestamp")
         self.__tree_size = ascii.parse_int(lines[1], "tree_size")
         self.__root_hash = ascii.parse_hash(lines[2], "root_hash")
