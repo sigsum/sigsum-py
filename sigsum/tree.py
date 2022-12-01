@@ -12,7 +12,7 @@ class TreeHead:
         if len(lines) != 4:
             raise ascii.ASCIIDecodeError(
                 "Expecting four lines for a signed tree head, got "
-                + string(len(lines)))
+                + str(len(lines)))
         self.__timestamp = ascii.parse_int(lines[0], "timestamp")
         self.__tree_size = ascii.parse_int(lines[1], "tree_size")
         self.__root_hash = ascii.parse_hash(lines[2], "root_hash")
@@ -31,10 +31,10 @@ class TreeHead:
         return self.__root_hash
 
     def text(self):
-        return ascii.dumps([("timestamp", self.timestamp),
-                            ("tree_size", self.tree_size),
-                            ("root_hash", self.root_hash),
-                            ("signature", self.signature)]).encode('ascii')
+        return ascii.dumps([("timestamp", self.__timestamp),
+                            ("tree_size", self.__tree_size),
+                            ("root_hash", self.__root_hash),
+                            ("signature", self.__signature)]).encode('ascii')
 
     def to_signed_data(self, pubkey):
         namespace = "tree-head:v0@sigsum.org"
