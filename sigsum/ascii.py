@@ -1,6 +1,7 @@
 import io
 
 def to_string(x):
+    # TODO: Delete str case; only used by tests.
     if isinstance(x, (int, str)):
         return str(x)
     elif isinstance(x, bytes):
