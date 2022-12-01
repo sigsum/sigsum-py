@@ -1,5 +1,28 @@
 import io
 
+def to_string(x):
+    if isinstance(x, (int, str)):
+        return str(x)
+    elif isinstance(x, bytes):
+        return x.hex()
+    else:
+        raise TypeError(
+            f"Object of type {type(x).__name__} is not ASCII serializable"
+        )
+
+def dumps_line(res, key, value):
+    if not isinstance(value, list):
+        value = [value]
+
+    if len(value) == 0:
+        raise TypeError(
+            f"ASCII serialization failed for key {key}, value is empty"
+        )
+
+    res.write(f"{key}={to_string(value[0])}")
+    for field in value[1:]:
+        res.write(f" {to_string(field)}")
+    res.write("\n")
 
 def dumps(data):
     """
@@ -8,18 +31,13 @@ def dumps(data):
     a TypeError is raised.
     """
     res = io.StringIO()
-    for [key, values] in data:
-        if not isinstance(values, list):
-            values = [values]
-        for val in values:
-            if isinstance(val, (int, str)):
-                res.write(f"{key}={val}\n")
-            elif isinstance(val, bytes):
-                res.write(f"{key}={val.hex()}\n")
-            else:
-                raise TypeError(
-                    f"Object of type {type(val).__name__} is not ASCII serializable"
-                )
+    for [key, *value] in data:
+        if len(value) == 1 and isinstance(value[0], list):
+            for item in value[0]:
+                dumps_line(res, key, item)
+        else:
+            dumps_line(res, key, value)
+
     res.seek(0)
     return res.read()
 

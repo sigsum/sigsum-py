@@ -16,8 +16,9 @@ import pytest
         ([("foo", [42])], "foo=42\n"),
         ([("foo", [b"\xDE\xAD\xBE\xEF"])], "foo=deadbeef\n"),
         ([("foo", "bar")], "foo=bar\n"),
+        ([("foo", "bar", "baz")], "foo=bar baz\n"),
     ],
-    ids=["empty", "simple", "list", "int", "bytes", "single-value-shortcut"],
+    ids=["empty", "simple", "list", "int", "bytes", "single-value-shortcut", "tuple"],
 )
 def test_dumps(data, expected):
     assert ascii.dumps(data) == expected
@@ -27,4 +28,4 @@ def test_dumps_type_error():
     with pytest.raises(
         TypeError, match="Object of type object is not ASCII serializable"
     ):
-        ascii.dumps([("foo", [object()])])
+        ascii.dumps([("foo", object())])
