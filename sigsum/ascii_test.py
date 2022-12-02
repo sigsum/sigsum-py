@@ -29,3 +29,25 @@ def test_dumps_type_error():
         TypeError, match="Object of type object is not ASCII serializable"
     ):
         ascii.dumps([("foo", object())])
+
+@pytest.mark.parametrize(
+    "line, name, count, expected",
+    [
+        ("foo=bar", "foo", 1, ["bar"]),
+        ("foo=bar baz", "foo", 2, ["bar", "baz"]),
+    ],
+    ids=["single value", "two values"]
+)
+def test_parse_line(line, name, count, expected):
+    assert ascii.parse_line(line, name, count) == expected
+
+def test_parse_line_invalid():
+    line = "foo=bar baz"
+    expected = ["bar", "baz"]
+    assert ascii.parse_line(line, "foo", 2) == expected
+    with pytest.raises(ascii.ASCIIDecodeError):
+        ascii.parse_line(line, "foo", 1)
+    with pytest.raises(ascii.ASCIIDecodeError):
+        ascii.parse_line(line, "foo", 3)
+    with pytest.raises(ascii.ASCIIDecodeError):
+        ascii.parse_line(line, "fo0", 2)
