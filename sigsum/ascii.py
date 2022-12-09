@@ -1,7 +1,6 @@
 import io
 
 def to_string(x):
-    # TODO: Delete str case; only used by tests.
     if isinstance(x, (int, str)):
         return str(x)
     elif isinstance(x, bytes):
@@ -12,8 +11,8 @@ def to_string(x):
         )
 
 def dumps_line(res, key, value):
-    if not isinstance(value, list):
-        value = [value]
+    if not isinstance(value, tuple):
+        value = (value,)
 
     if len(value) == 0:
         raise TypeError(
@@ -28,13 +27,15 @@ def dumps_line(res, key, value):
 def dumps(data):
     """
     dumps takes a list of key/values tuples, and serializes it to ASCII.
-    If one of the values is not of type str, int or bytes (or a list of those)
-    a TypeError is raised.
+    If one of the values is not of type str, int or bytes (or a tuple
+    or list of those) a TypeError is raised. A tuple is serialized as
+    several values on the same line, while a list is serialized as
+    multiple lines.
     """
     res = io.StringIO()
-    for [key, *value] in data:
-        if len(value) == 1 and isinstance(value[0], list):
-            for item in value[0]:
+    for [key, value] in data:
+        if isinstance(value, list):
+            for item in value:
                 dumps_line(res, key, item)
         else:
             dumps_line(res, key, value)

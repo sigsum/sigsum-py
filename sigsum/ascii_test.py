@@ -16,7 +16,7 @@ import pytest
         ([("foo", [42])], "foo=42\n"),
         ([("foo", [b"\xDE\xAD\xBE\xEF"])], "foo=deadbeef\n"),
         ([("foo", "bar")], "foo=bar\n"),
-        ([("foo", "bar", "baz")], "foo=bar baz\n"),
+        ([("foo", ("bar", "baz"))], "foo=bar baz\n"),
     ],
     ids=["empty", "simple", "list", "int", "bytes", "single-value-shortcut", "tuple"],
 )
