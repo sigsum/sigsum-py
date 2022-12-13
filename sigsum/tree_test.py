@@ -1,5 +1,5 @@
 import pytest
-from .tree import TreeHead, ConsistencyProof
+from . import tree
 
 class TestTreeHead:
     def test_init(self):
@@ -8,7 +8,7 @@ tree_size=10
 root_hash=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 signature=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 """
-        tree_head = TreeHead(data)
+        tree_head = tree.TreeHead(data)
         assert tree_head.timestamp == 1000
         assert tree_head.tree_size == 10
         assert len(tree_head.root_hash) == 32
@@ -18,7 +18,7 @@ class TestConsistencyProof:
         data = """consistency_path=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 consistency_path=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 """
-        consistency_proof = ConsistencyProof(10, 17, data)
+        consistency_proof = tree.ConsistencyProof(10, 17, data)
         assert consistency_proof.old_size() == 10
         assert consistency_proof.new_size() == 17
         assert len(consistency_proof.path()) == 2
