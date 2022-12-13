@@ -359,9 +359,9 @@ def consistency_proof_valid(first, second, proof):
 def sign_send_store_tree_head(signer, log_key, tree_head):
     signature = signer.sign(tree_head.to_signed_data(log_key))
     hash = sha256(signer.public())
-    post_data = sigsum.ascii.dumps({
-        'cosignature': hash.hexdigest() + " " + signature.hex(),
-    })
+    post_data = sigsum.ascii.dumps([
+        ('cosignature', (hash.digest(), signature)),
+    ])
     try:
         req = requests.post(g_args.base_url + 'add-cosignature', post_data)
     except requests.ConnectionError as err:

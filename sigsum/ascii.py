@@ -1,93 +1,84 @@
 import io
 
+def to_string(x):
+    if isinstance(x, (int, str)):
+        return str(x)
+    elif isinstance(x, bytes):
+        return x.hex()
+    else:
+        raise TypeError(
+            f"Object of type {type(x).__name__} is not ASCII serializable"
+        )
+
+def dumps_line(res, key, value):
+    if not isinstance(value, tuple):
+        value = (value,)
+
+    if len(value) == 0:
+        raise TypeError(
+            f"ASCII serialization failed for key {key}, value is empty"
+        )
+
+    res.write(f"{key}={to_string(value[0])}")
+    for field in value[1:]:
+        res.write(f" {to_string(field)}")
+    res.write("\n")
 
 def dumps(data):
     """
-    dumps takes a key/values mapping and serializes it to ASCII.
-    If one of the values is not of type str, int or bytes (or a list of those)
-    a TypeError is raised.
+    dumps takes a list of key/values tuples, and serializes it to ASCII.
+    If one of the values is not of type str, int or bytes (or a tuple
+    or list of those) a TypeError is raised. A tuple is serialized as
+    several values on the same line, while a list is serialized as
+    multiple lines.
     """
     res = io.StringIO()
-    for key in data:
-        values = data[key]
-        if not isinstance(values, list):
-            values = [values]
-        for val in values:
-            if isinstance(val, (int, str)):
-                res.write(f"{key}={val}\n")
-            elif isinstance(val, bytes):
-                res.write(f"{key}={val.hex()}\n")
-            else:
-                raise TypeError(
-                    f"Object of type {type(val).__name__} is not ASCII serializable"
-                )
+    for [key, value] in data:
+        if isinstance(value, list):
+            for item in value:
+                dumps_line(res, key, item)
+        else:
+            dumps_line(res, key, value)
+
     res.seek(0)
     return res.read()
 
+def parse_line(line, name, count):
+    prefix = name + "="
+    if not line.startswith(prefix):
+        raise ASCIIDecodeError("Expecting '" + prefix+ "' line")
+    values = line[len(prefix):].split(" ")
+    if len(values) != count:
+        raise ASCIIDecodeError(
+            "Expecting {} values for '{}' line, got {}".format(count, prefix, len(values)))
+    return values
 
-def loads(txt):
-    """
-    loads deserialized the given string into an ASCIIValue.
-    """
-    kv = []
-    for lno, line in enumerate(txt.splitlines(), 1):
-        if "=" not in line:
-            raise ASCIIDecodeError("Expecting '=' delimiter line 1")
-        (key, val) = line.rstrip().split("=", 1)
-        if val == "":
-            raise ASCIIDecodeError("Expecting value after '=' line 1")
-        kv.append((key, val))
-    return ASCIIValue(kv)
+def parse_hash(line, name):
+    v = parse_line(line, name, 1)
+    h = bytes.fromhex(v[0])
+    if len(h) != 32:
+        raise ascii.ASCIIDecodeError("invalid length of hex hash value: " + v[0])
+    return h
 
+def parse_signature(line, name):
+    v = parse_line(line, name, 1)
+    h = bytes.fromhex(v[0])
+    if len(h) != 64:
+        raise ascii.ASCIIDecodeError("invalid length of hex signature value: " + v[0])
+    return h
+
+def parse_int(line, name):
+    v = parse_line(line, name, 1)
+    # Conversion using int() below allows negative numbers and bignums,
+    # so first reject leading minus sign and very large values.
+    if len(v[0]) > len(str(1<<63)) or not v[0][0].isdigit():
+        raise ascii.ASCIIDecodeError("invalid decimal integer: " + v[0])
+    i = int(v[0])
+    if i >= (1<<63):
+        raise ascii.ASCIIDecodeError("decimal integer too large: " + v[0])
+    return i
 
 class ASCIIDecodeError(Exception):
     """
     ASCIIDecodeError indicates that loads couldn't deserialize the given input.
     """
-
-
-class ASCIIValue:
-    """
-    ASCIIValue implements Mapping[str, List[str]] with convenience getters to
-    parse sigsum types.
-    """
-
-    def __init__(self, data):
-        self._d = {}
-        for k, v in data:
-            self._d.setdefault(k, []).append(v)
-
-    def __getitem__(self, k):
-        return self._d.__getitem__(k)
-
-    def __len__(self):
-        return self._d.__len__()
-
-    def __iter__(self):
-        return self._d.__iter__()
-
-    def getone(self, k):
-        v = self._d[k]
-        if len(v) > 1:
-            raise ValueError(f"{k}: expected a single value, got {len(v)}")
-        return self._d[k][0]
-
-    def getint(self, k, many=False):
-        if many:
-            return [int(x) for x in self._d[k]]
-        return int(self.getone(k))
-
-    def getbytes(self, k, many=False):
-        if many:
-            return [bytes.fromhex(x) for x in self._d[k]]
-        return bytes.fromhex(self.getone(k))
-
-    def __repr__(self):
-        return f'ASCIIValue([{", ".join(f"({k!r}, {v!r})" for k,vs in self._d.items() for v in vs)}])'
-
-    def __eq__(self, other):
-        if isinstance(other, ASCIIValue):
-            return self._d.__eq__(other._d)
-        if isinstance(other, dict):
-            return self._d.__eq__(other)
-        return NotImplemented
