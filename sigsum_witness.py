@@ -31,9 +31,9 @@ from stat import *
 import nacl.encoding
 import nacl.signing
 import prometheus_client as prometheus
-import requests
 
 import sigsum.ascii
+import sigsum.client
 import sigsum.crypto
 import sigsum.tree
 
@@ -193,7 +193,7 @@ def timestamp_valid(tree, now):
         return (ERR_OK,
                 "WARNING: Tree head timestamp from the future: {} ({})".format(ts_sec, ts_asc))
 
-def history_valid(next, prev):
+def history_valid(client: sigsum.client.LogClient, next, prev):
     if next.tree_size < prev.tree_size:
         return (ERR_TREEHEAD_INVALID,
                 "ERROR: Log is shrinking: {} < {} ".format(next.tree_size,
@@ -234,8 +234,7 @@ def history_valid(next, prev):
         print("INFO: Signing re-published head of tree of size {}".format(next.tree_size))
         return None         # Success
 
-    proof, err = fetch_consistency_proof(prev.tree_size, next.tree_size)
-    if err: return err
+    proof = client.get_consistency_proof(prev.tree_size, next.tree_size)
     if not consistency_proof_valid(prev, next, proof):
         errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(prev.tree_size,
                                                                               next.tree_size)
@@ -281,32 +280,18 @@ def store_tree_head(tree_head):
     with open(path, mode='w+b') as f:
         f.write(tree_head.text())
 
-def fetch_tree_head_and_verify(log_verification_key):
-    try:
-        req = requests.get(g_args.base_url + 'get-tree-head-to-cosign')
-    except requests.ConnectionError as err:
-        return None, (ERR_TREEHEAD_FETCH, f"ERROR: unable to fetch new tree head: {err}")
-    if req.status_code != 200:
-        return None, (ERR_TREEHEAD_FETCH,
-                      "ERROR: unable to fetch new tree head: {}".format(req.status_code))
 
-    tree_head = sigsum.tree.TreeHead(req.content.decode())
+def fetch_tree_head_and_verify(client: sigsum.client.LogClient, log_verification_key):
+    try:
+        tree_head = client.get_tree_head_to_cosign()
+    except sigsum.client.LogClientError as err:
+        return None, (ERR_TREEHEAD_FETCH, f"unable to fetch new tree head: {err}")
+
     if not tree_head.signature_valid(log_verification_key):
         return None, (ERR_TREEHEAD_SIGNATURE_INVALID,
                       "ERROR: signature of fetched tree head invalid")
 
     return tree_head, None
-
-def fetch_consistency_proof(first, second):
-    url = g_args.base_url + 'get-consistency-proof/{}/{}'.format(first, second)
-    try:
-        req = requests.get(url)
-    except requests.ConnectionError as err:
-        return None, (ERR_TREEHEAD_FETCH, f"ERROR: unable to fetch consistency proof: {err}")
-    if req.status_code != 200:
-        return None, (ERR_CONSISTENCYPROOF_FETCH,
-                      "ERROR: unable to fetch consistency proof: {}".format(req.status_code))
-    return sigsum.tree.ConsistencyProof(first, second, req.content.decode()), None
 
 def numbits(n):
     p = 0
@@ -356,21 +341,17 @@ def consistency_proof_valid(first, second, proof):
 
     return sn == 0 and fr == first.root_hash and sr == second.root_hash
 
-def sign_send_store_tree_head(signer, log_key, tree_head):
+
+def sign_send_store_tree_head(
+    client: sigsum.client.LogClient, signer, log_key, tree_head
+):
     signature = signer.sign(tree_head.to_signed_data(log_key))
     hash = sha256(signer.public())
-    post_data = sigsum.ascii.dumps([
-        ('cosignature', (hash.digest(), signature)),
-    ])
+    cosig = sigsum.tree.Cosignature(hash.digest(), signature)
     try:
-        req = requests.post(g_args.base_url + 'add-cosignature', post_data)
-    except requests.ConnectionError as err:
-        return (ERR_COSIG_POST, f"ERROR: Unable to post signature to log: {err}")
-    if req.status_code != 200:
-        return (ERR_COSIG_POST,
-                "ERROR: Unable to post signature to log: {} => {}: {}". format(req.url,
-                                                                               req.status_code,
-                                                                               req.text))
+        client.add_cosignature(cosig)
+    except sigsum.client.LogClientError as err:
+        return (ERR_COSIG_POST, f"Unable to post signature to log: {err}")
     # Store only when all else is done. Next invocation will treat a
     # stored tree head as having been verified.
     store_tree_head(tree_head)
@@ -432,8 +413,9 @@ def user_confirm(prompt):
 
 
 class Witness(threading.Thread):
-    def __init__(self, signer, log_verification_key, cur_tree_head):
+    def __init__(self, client: sigsum.client.LogClient, signer, log_verification_key, cur_tree_head):
         super().__init__()
+        self.client = client
         self.signer = signer
         self.log_verification_key = log_verification_key
         self.cur_tree_head = cur_tree_head
@@ -455,7 +437,9 @@ class Witness(threading.Thread):
                 LAST_SUCCESS.set_to_current_time()
 
     def sign_once(self):
-        new_tree_head, err = fetch_tree_head_and_verify(self.log_verification_key)
+        new_tree_head, err = fetch_tree_head_and_verify(
+            self.client, self.log_verification_key
+        )
         if err:
             return err
         LOG_TIMESTAMP.set(new_tree_head.timestamp)
@@ -464,7 +448,7 @@ class Witness(threading.Thread):
         err = timestamp_valid(new_tree_head, now)
         if err:
             return err
-        err = history_valid(new_tree_head, self.cur_tree_head)
+        err = history_valid(self.client, new_tree_head, self.cur_tree_head)
         if err:
             # We don't want to count an already signed treehead as an error
             if err[0] == ERR_TREEHEAD_SEEN:
@@ -473,12 +457,12 @@ class Witness(threading.Thread):
             return err
         if not self.cur_tree_head.signature_valid(self.log_verification_key):
             return (
-                    ERR_TREEHEAD_SIGNATURE_INVALID,
-                    "ERROR: signature of current tree head invalid",
-                    )
+                ERR_TREEHEAD_SIGNATURE_INVALID,
+                "ERROR: signature of current tree head invalid",
+            )
         err = sign_send_store_tree_head(
-                self.signer, self.log_verification_key, new_tree_head
-                )
+            self.client, self.signer, self.log_verification_key, new_tree_head
+        )
         if err:
             return err
         self.cur_tree_head = new_tree_head
@@ -522,9 +506,11 @@ def main():
             Path(g_args.base_dir, g_args.sigkey_file), g_args.generate_signing_key
         )
 
+    client = sigsum.client.LogClient(g_args.base_url)
+
     cur_tree_head, err = read_tree_head_and_verify(log_verification_key)
     if err:
-        new_tree_head, err2 = fetch_tree_head_and_verify(log_verification_key)
+        new_tree_head, err2 = fetch_tree_head_and_verify(client, log_verification_key)
         if err2:
             die(*err2)
 
@@ -540,7 +526,7 @@ def main():
                                                                               new_tree_head.tree_size))
         if user_confirm("Really sign head for tree of size {} and upload "
                         "the signature?".format(new_tree_head.tree_size)):
-            err3 = sign_send_store_tree_head(signer, log_verification_key, new_tree_head)
+            err3 = sign_send_store_tree_head(client, signer, log_verification_key, new_tree_head)
             if err3:
                 die(*err3)
 
@@ -554,7 +540,7 @@ def main():
 
     LOGGER.info("Starting witness")
     LOGGER.info(f"Public key: {signer.public().hex()}")
-    thread = Witness(signer, log_verification_key, cur_tree_head)
+    thread = Witness(client, signer, log_verification_key, cur_tree_head)
     if g_args.once:
         err = thread.sign_once()
         if err:

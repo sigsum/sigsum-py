@@ -1,4 +1,5 @@
 import struct
+from dataclasses import dataclass
 from hashlib import sha256
 
 import nacl.exceptions
@@ -29,6 +30,10 @@ class TreeHead:
     @property
     def root_hash(self):
         return self.__root_hash
+
+    @property
+    def signature(self):
+        return self.__signature
 
     def text(self):
         return ascii.dumps([("timestamp", self.__timestamp),
@@ -69,3 +74,14 @@ class ConsistencyProof:
 
     def path(self):
         return self.__path
+
+
+@dataclass(frozen=True)
+class Cosignature:
+    keyhash: bytes
+    signature: bytes
+
+    def text(self):
+        return ascii.dumps(
+            [("cosignature", f"{self.keyhash.hex()} {self.signature.hex()}")]
+        ).encode("ascii")

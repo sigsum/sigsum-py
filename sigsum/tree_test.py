@@ -22,3 +22,12 @@ consistency_path=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
         assert consistency_proof.old_size() == 10
         assert consistency_proof.new_size() == 17
         assert len(consistency_proof.path()) == 2
+
+
+class TestCosignature:
+    def test_text(self):
+        cosig = tree.Cosignature(b"\xaa" * 32, b"\xbb" * 64)
+        assert (
+            cosig.text()
+            == b"cosignature=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        )
