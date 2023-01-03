@@ -57,7 +57,7 @@ def test_get_consistency_proof():
     )
     client = LogClient("https://sigsum.log/")
     proof = client.get_consistency_proof(2, 8)
-    assert proof.path() == [b"\xAA" * 32, b"\xBB" * 32]
+    assert list(proof.path) == [b"\xAA" * 32, b"\xBB" * 32]
 
 
 @responses.activate

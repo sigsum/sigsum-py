@@ -238,11 +238,9 @@ def history_valid(client: sigsum.client.LogClient, next, prev):
     if not consistency_proof_valid(prev, next, proof):
         errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(prev.tree_size,
                                                                               next.tree_size)
-        errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(prev.tree_size,
-                                                     prev.root_hash,
-                                                     next.tree_size,
-                                                     next.root_hash,
-                                                     proof.path())
+        errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(
+            prev.tree_size, prev.root_hash, next.tree_size, next.root_hash, proof.path
+        )
         return ERR_CONSISTENCYPROOF_INVALID, errmsg
 
     return None             # Success
@@ -258,7 +256,9 @@ def make_base_dir_maybe():
 def read_tree_head(filename):
     try:
         with open(filename, mode='r') as f:
-            return sigsum.tree.TreeHead(f.read())
+            return sigsum.tree.TreeHead.fromascii(f.read())
+    except sigsum.ascii.ASCIIDecodeError as err:
+        die(ERR_TREEHEAD_READ, f"{filename}: {err}")
     except FileNotFoundError:
         return None
 
@@ -278,7 +278,7 @@ def read_tree_head_and_verify(log_verification_key):
 def store_tree_head(tree_head):
     path = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed-tree-head'))
     with open(path, mode='w+b') as f:
-        f.write(tree_head.text())
+        f.write(tree_head.ascii())
 
 
 def fetch_tree_head_and_verify(client: sigsum.client.LogClient, log_verification_key):
@@ -305,10 +305,10 @@ def numbits(n):
 # in RFC6962-BIS, see
 # https://datatracker.ietf.org/doc/html/draft-ietf-trans-rfc6962-bis-39#section-2.1.4.2
 def consistency_proof_valid(first, second, proof):
-    assert(first.tree_size == proof.old_size())
-    assert(second.tree_size == proof.new_size())
+    assert(first.tree_size == proof.old_size)
+    assert(second.tree_size == proof.new_size)
 
-    path = proof.path()
+    path = proof.path
     if len(path) == 0:
         return False
     if numbits(first.tree_size) == 1:

@@ -13,16 +13,16 @@ class LogClient:
 
     def get_tree_head_to_cosign(self) -> tree.TreeHead:
         resp = self._request("GET", "get-tree-head-to-cosign")
-        return tree.TreeHead(resp.text)
+        return tree.TreeHead.fromascii(resp.text)
 
     def get_consistency_proof(
         self, old_size: int, new_size: int
     ) -> tree.ConsistencyProof:
         resp = self._request("GET", f"get-consistency-proof/{old_size}/{new_size}")
-        return tree.ConsistencyProof(old_size, new_size, resp.text)
+        return tree.ConsistencyProof.fromascii(old_size, new_size, resp.text)
 
     def add_cosignature(self, cosig: tree.Cosignature):
-        self._request("POST", "add-cosignature", data=cosig.text())
+        self._request("POST", "add-cosignature", data=cosig.ascii())
 
     def _request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         url = self.__base_url + endpoint
