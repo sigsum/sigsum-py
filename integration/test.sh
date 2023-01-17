@@ -2,6 +2,9 @@
 
 set -e
 
+# Go to the directory this scripts lives in
+cd $(dirname "$(realpath "$0")")
+
 # Use a local directory for go deps
 export GOBIN="$(pwd)"
 
