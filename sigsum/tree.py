@@ -2,9 +2,9 @@ import struct
 import typing
 from dataclasses import dataclass
 from hashlib import sha256
+from base64 import b64encode
 
 import nacl.exceptions
-from tools.libsigntools import ssh_to_sign
 
 from . import ascii
 
@@ -41,15 +41,12 @@ class TreeHead:
             ]
         ).encode("ascii")
 
-    def to_signed_data(self) -> bytes:
-        namespace = "signed-tree-head:v0@sigsum.org"
-        msg = struct.pack("!Q", self.size)
-        msg += self.root_hash
-        assert len(msg) == 8 + 32
-        return ssh_to_sign(namespace, "sha256", sha256(msg).digest())
+    def to_signed_data(self, key_hash : bytes) -> bytes:
+        return (f"sigsum.org/v1/tree/{key_hash.hex()}\n{self.size}\n".encode("ascii")
+                + b64encode(self.root_hash) + b"\n")
 
-    def signature_valid(self, pubkey) -> bool:
-        data = self.to_signed_data()
+    def signature_valid(self, pubkey):
+        data = self.to_signed_data(sha256(pubkey.encode()).digest())
         try:
             verified_data = pubkey.verify(self.signature + data)
         except nacl.exceptions.BadSignatureError:

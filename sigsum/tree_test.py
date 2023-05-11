@@ -27,15 +27,22 @@ signature=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 """
         )
 
-    # Based in sigsum-go tree_head_test.go, revision 5cae7e582a5fff0b2849e96639988841800b7700 (before merge of checkpoint format).
+    def test_to_signed_data(self):
+        sth = tree.TreeHead(10, bytes.fromhex("cc" * 32), bytes.fromhex("dd" * 64))
+        key_hash = bytes.fromhex("ee" * 32)
+        assert sth.to_signed_data(key_hash) == b"""sigsum.org/v1/tree/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+10
+zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMw=
+"""
+
     def test_signature_valid(self):
         data="""size=4
-root_hash=84ec3e1ba5433358988ac74bed33a30bda42cc983b87e4940a423c2d84890f0f
-signature=7e2084ded0f7625136e6c811ac7eae2cb79613cadb12a6437b391cdae3a5c915dcd30b5b5fe4fbf417a2d607a4cfcb3612d7fd4ffe9453c0d29ec002a6d47709
+root_hash=7bca01e88737999fde5c1d6ecac27ae3cb49e14f21bcd3e7245c276877b899c9
+signature=c60e5151b9d0f0efaf57022c0ec306c0f0275afef69333cc89df4fda328c87949fcfa44564f35020938a4cd6c1c50bc0349b2f54b82f5f6104b9cd52be2cd90e
 """
         tree_head = tree.TreeHead.fromascii(data)
 
-        pub_key = nacl.signing.VerifyKey("22c091e3f75497ef19015c5daf143910e20cda7295b0fd1ddf83825686efeca6", encoder=nacl.encoding.HexEncoder)
+        pub_key = nacl.signing.VerifyKey("dea4c37c360568e528b76bb67bf821a37ece0f3f46928603df006db4f08e9750", encoder=nacl.encoding.HexEncoder)
         assert tree_head.signature_valid(pub_key)
 
         tree_head.size = tree_head.size + 1
