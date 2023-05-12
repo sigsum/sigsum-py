@@ -6,7 +6,7 @@ before_script:
 
 tests:
   script:
-  - pip install poetry==1.1.13
+  - pip install poetry==1.4.2
   - poetry install
   - poetry run mypy sigsum
   - poetry run pytest --cov
