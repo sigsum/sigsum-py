@@ -1,4 +1,3 @@
-/*.public
-/*.private
-/log-sth
+/tmp.*
+/signed-tree-head
 /bin
