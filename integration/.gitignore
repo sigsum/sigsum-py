@@ -1,6 +1,4 @@
 /*.public
 /*.private
 /log-sth
-/sigsum-debug
-/sigsum-log-primary
-/.go-deps
+/bin

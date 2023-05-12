@@ -12,7 +12,7 @@ class LogClient:
         self.__base_url = base_url
 
     def get_tree_head_to_cosign(self) -> tree.TreeHead:
-        resp = self._request("GET", "get-tree-head-to-cosign")
+        resp = self._request("GET", "get-next-tree-head")
         return tree.TreeHead.fromascii(resp.text)
 
     def get_consistency_proof(
