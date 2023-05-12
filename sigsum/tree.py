@@ -36,14 +36,14 @@ class TreeHead:
             ]
         ).encode("ascii")
 
-    def to_signed_data(self):
+    def to_signed_data(self) -> bytes:
         namespace = "signed-tree-head:v0@sigsum.org"
         msg = struct.pack("!Q", self.size)
         msg += self.root_hash
         assert len(msg) == 8 + 32
         return ssh_to_sign(namespace, "sha256", sha256(msg).digest())
 
-    def signature_valid(self, pubkey):
+    def signature_valid(self, pubkey) -> bool:
         data = self.to_signed_data()
         try:
             verified_data = pubkey.verify(self.signature + data)
@@ -52,7 +52,7 @@ class TreeHead:
         assert verified_data == data
         return True
 
-    def to_cosigned_data(self, timestamp : int, log_key_hash : bytes):
+    def to_cosigned_data(self, timestamp : int, log_key_hash : bytes) -> bytes:
         namespace = "cosigned-tree-head:v0@sigsum.org"
         msg = struct.pack("!Q", self.size)
         msg += self.root_hash

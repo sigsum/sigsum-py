@@ -270,7 +270,6 @@ def fetch_tree_head_and_verify(client: sigsum.client.LogClient, log_verification
         return None, (ERR_TREEHEAD_FETCH, f"unable to fetch new tree head: {err}")
 
     if not tree_head.signature_valid(log_verification_key):
-        print(f"XXX tree head:\n{tree_head.ascii()}\npubkey: {log_verification_key.encode(nacl.encoding.HexEncoder)}\n")
         return None, (ERR_TREEHEAD_SIGNATURE_INVALID,
                       "ERROR: signature of fetched tree head invalid")
 
@@ -287,7 +286,7 @@ def numbits(n):
 # Implements the algorithm for consistency proof verification outlined
 # in RFC6962-BIS, see
 # https://datatracker.ietf.org/doc/html/draft-ietf-trans-rfc6962-bis-39#section-2.1.4.2
-def consistency_proof_valid(first, second, proof):
+def consistency_proof_valid(first, second, proof) -> bool:
     assert(first.size == proof.old_size)
     assert(second.size == proof.new_size)
 
