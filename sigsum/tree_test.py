@@ -37,7 +37,7 @@ signature=7e2084ded0f7625136e6c811ac7eae2cb79613cadb12a6437b391cdae3a5c915dcd30b
 
         pub_key = nacl.signing.VerifyKey("22c091e3f75497ef19015c5daf143910e20cda7295b0fd1ddf83825686efeca6", encoder=nacl.encoding.HexEncoder)
         assert tree_head.signature_valid(pub_key)
- 
+
         tree_head.size = tree_head.size + 1
         assert not tree_head.signature_valid(pub_key)
 
