@@ -10,25 +10,19 @@ GOBIN="$(pwd)"/bin go install sigsum.org/log-go/cmd/...@v0.8.0
 # log-go@v0.8.0 depends on 0.1.18, but we need newer tools. But it seems 0.1.24 is too new
 GOBIN="$(pwd)"/bin go install sigsum.org/sigsum-go/cmd/...@v0.1.21
 
-./bin/sigsum-key gen -o log-key
-# ./sigsum-debug key private > log-key.private
-# cat log-key.private | ./sigsum-debug key public > log-key.public
+./bin/sigsum-key gen -o tmp.log-key
+./bin/sigsum-key gen -o tmp.submit-key
 
-./bin/sigsum-key gen -o submit-key
-# ./sigsum-debug key private > submit-key.private
-# cat submit-key.private | ./sigsum-debug key public > submit-key.public
+(umask 077 && ./bin/sigsum-debug key private > tmp.witness-key.private)
+cat tmp.witness-key.private | ./bin/sigsum-debug key public > tmp.witness-key.public # hex format
+cat tmp.witness-key.public | ./bin/sigsum-key hex-to-pub $(cat tmp.witness-key.public) > tmp.witness-key.pub # ssh format
 
-./bin/sigsum-debug key private > witness-key.private
-cat witness-key.private | ./bin/sigsum-debug key public > witness-key.public # hex format
-cat witness-key.public | ./bin/sigsum-key hex-to-pub $(cat witness-key.public) > witness-key.pub # ssh format
-
-ls -l witness-key.private
 # Start sigsum log server
-rm -f log-sth
-./bin/sigsum-mktree --key log-key --sth-path log-sth
+rm -f tmp.log-sth
+./bin/sigsum-mktree --key tmp.log-key --sth-path tmp.log-sth
 ./bin/sigsum-log-primary \
-    --key log-key --witnesses witness-key.pub \
-    --interval=3s --log-level=debug --ephemeral-test-backend --sth-path log-sth /dev/null &
+    --key tmp.log-key --witnesses tmp.witness-key.pub \
+    --interval=3s --log-level=debug --ephemeral-test-backend --sth-path tmp.log-sth /dev/null &
 
 SIGSUM_PID=$!
 
@@ -49,8 +43,8 @@ function b16decode {
 function add_leaf () {
     {
 	echo "message=$(openssl dgst -binary <(echo $1) | b16encode)"
-	echo "signature=$(echo $1 | ./bin/sigsum-debug leaf sign -k submit-key)"
-	echo "public_key=$(./bin/sigsum-key hex -k submit-key.pub)"
+	echo "signature=$(echo $1 | ./bin/sigsum-debug leaf sign -k tmp.submit-key)"
+	echo "public_key=$(./bin/sigsum-key hex -k tmp.submit-key.pub)"
     } | curl -sS --data-binary @- http://localhost:6965/add-leaf >&2
 }
 
@@ -85,15 +79,17 @@ add_leaf 2
 
 wait_tree_head 2
 
-chmod go-rx witness-key.private
-yes | ../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --bootstrap-log -s witness-key.private -l $(./bin/sigsum-key hex -k log-key.pub) -i 5 -v
+# Always start witnessing with no previous state
+rm -f signed-tree-head
+
+yes | ../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --bootstrap-log -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -i 5 -v
 wait_cosigned_tree_head 2
 
 add_leaf 3
 add_leaf 4
 wait_tree_head 4
 
-../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --once -s witness-key.private -l $(./bin/sigsum-key hex -k log-key.pub) -v
+../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --once -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -v
 wait_cosigned_tree_head 4
 
 exit 0
