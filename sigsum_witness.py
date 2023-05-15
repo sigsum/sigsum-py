@@ -217,7 +217,7 @@ def history_valid(client: sigsum.client.LogClient, next : sigsum.tree.TreeHead, 
         return None         # Success
 
     proof = client.get_consistency_proof(prev.size, next.size)
-    if not consistency_proof_valid(prev, next, proof):
+    if not proof.proof_valid(prev, next):
         errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(prev.size,
                                                                               next.size)
         errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(
@@ -274,54 +274,6 @@ def fetch_tree_head_and_verify(client: sigsum.client.LogClient, log_verification
                       "ERROR: signature of fetched tree head invalid")
 
     return tree_head, None
-
-def numbits(n):
-    p = 0
-    while n > 0:
-        if n & 1:
-            p += 1
-        n >>= 1
-    return p
-
-# Implements the algorithm for consistency proof verification outlined
-# in RFC6962-BIS, see
-# https://datatracker.ietf.org/doc/html/draft-ietf-trans-rfc6962-bis-39#section-2.1.4.2
-def consistency_proof_valid(first, second, proof) -> bool:
-    assert(first.size == proof.old_size)
-    assert(second.size == proof.new_size)
-
-    path = proof.path
-    if len(path) == 0:
-        return False
-    if numbits(first.size) == 1:
-        path = [first.root_hash] + path
-
-    fn = first.size - 1
-    sn = second.size - 1
-    while fn & 1:
-        fn >>= 1
-        sn >>= 1
-
-    fr = path[0]
-    sr = path[0]
-
-    for c in path[1:]:
-        if sn == 0:
-            return False
-
-        if fn & 1 or fn == sn:
-            fr = sha256(b'\x01' + c + fr).digest()
-            sr = sha256(b'\x01' + c + sr).digest()
-            while fn != 0 and fn & 1 == 0:
-                fn >>= 1
-                sn >>= 1
-        else:
-            sr = sha256(b'\x01' + sr + c).digest()
-
-        fn >>= 1
-        sn >>= 1
-
-    return sn == 0 and fr == first.root_hash and sr == second.root_hash
 
 
 def sign_send_store_tree_head(
