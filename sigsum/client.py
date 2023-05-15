@@ -18,8 +18,12 @@ class LogClient:
     def get_consistency_proof(
         self, old_size: int, new_size: int
     ) -> tree.ConsistencyProof:
+        assert old_size <= new_size
+        # For trivial proofs, don't ask the log server.
+        if old_size == new_size or old_size == 0:
+            return tree.ConsistencyProof([])
         resp = self._request("GET", f"get-consistency-proof/{old_size}/{new_size}")
-        return tree.ConsistencyProof.fromascii(old_size, new_size, resp.text)
+        return tree.ConsistencyProof.fromascii(resp.text)
 
     def add_cosignature(self, cosig: tree.Cosignature):
         self._request("POST", "add-cosignature", data=cosig.ascii())
