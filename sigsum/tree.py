@@ -63,7 +63,7 @@ class TreeHead:
 
 @dataclass(frozen=True)
 class ConsistencyProof:
-    path: typing.Sequence[bytes]
+    path: typing.List[bytes]
 
     @staticmethod
     def fromascii(data: str) -> "ConsistencyProof":
