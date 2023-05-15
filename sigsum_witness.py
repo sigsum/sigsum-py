@@ -53,7 +53,7 @@ LAST_SUCCESS = prometheus.Gauge(
     "sigsum_witness_last_success_timestamp_seconds", "Time of last successful signature"
 )
 LOG_TIMESTAMP = prometheus.Gauge(
-    "sigsum_witness_log_timestamp_seconds", "Latest tree-head timestamp from the log."
+    "sigsum_witness_log_timestamp_seconds", "Latest cosignature timestamp."
 )
 LOG_TREE_SIZE = prometheus.Gauge(
     "sigsum_witness_log_tree_size", "Latest tree size from the log."
@@ -182,64 +182,46 @@ def parse_keyval(text):
                 dictx[key] = [dictx[key], val]
     return dictx
 
-def timestamp_valid(tree, now):
-    ts_sec = tree.timestamp
-    ts_asc = time.ctime(ts_sec)
-    acceptable_drift = 10
-    if ts_sec < now - 5 * 60 - acceptable_drift:
-        return (ERR_OK,
-                "WARNING: Tree head timestamp older than five minutes: {} ({})".format(ts_sec, ts_asc))
-    if ts_sec > now + acceptable_drift:
-        return (ERR_OK,
-                "WARNING: Tree head timestamp from the future: {} ({})".format(ts_sec, ts_asc))
-
-def history_valid(client: sigsum.client.LogClient, next, prev):
-    if next.tree_size < prev.tree_size:
+def history_valid(client: sigsum.client.LogClient, next : sigsum.tree.TreeHead, prev : sigsum.tree.TreeHead):
+    if next.size < prev.size:
         return (ERR_TREEHEAD_INVALID,
-                "ERROR: Log is shrinking: {} < {} ".format(next.tree_size,
-                                                           prev.tree_size))
-
-    if next.timestamp < prev.timestamp:
-        return (ERR_TREEHEAD_INVALID,
-                "ERROR: Log is time traveling: {} < {} ".format(time.ctime(next.timestamp),
-                                                                time.ctime(prev.timestamp)))
-
-    if next.timestamp == prev.timestamp and \
-       next.root_hash == prev.root_hash and \
-       next.tree_size == prev.tree_size:
-        return (ERR_TREEHEAD_SEEN,
-                "INFO: Fetched head of tree of size {} already seen".format(prev.tree_size))
+                "ERROR: Log is shrinking: {} < {} ".format(next.size,
+                                                           prev.size))
 
     if next.root_hash == prev.root_hash and \
-       next.tree_size != prev.tree_size:
+       next.size == prev.size:
+        return (ERR_TREEHEAD_SEEN,
+                "INFO: Fetched head of tree of size {} already seen".format(prev.size))
+
+    if next.root_hash == prev.root_hash and \
+       next.size != prev.size:
         return (ERR_TREEHEAD_INVALID,
                 "ERROR: Tree size has changed but hash has not: "
                 "{}: {} != {}".format(next.root_hash,
-                                      next.tree_size,
-                                      prev.tree_size))
+                                      next.size,
+                                      prev.size))
 
     if next.root_hash != prev.root_hash and \
-       next.tree_size == prev.tree_size:
+       next.size == prev.size:
         return (ERR_TREEHEAD_INVALID,
                 "ERROR: Hash has changed but tree size has not: "
-                "{}: {} != {}".format(next.tree_size,
+                "{}: {} != {}".format(next.size,
                                       next.root_hash,
                                       prev.root_hash))
 
-    # New timestamp but same hash and size is ok but there's no
+    # Same hash and size is ok but there's no
     # consistency to prove.
     if next.root_hash == prev.root_hash:
-        assert(next.tree_size == prev.tree_size)
-        assert(next.timestamp != prev.timestamp)
-        print("INFO: Signing re-published head of tree of size {}".format(next.tree_size))
+        assert(next.size == prev.size)
+        print("INFO: Signing re-published head of tree of size {}".format(next.size))
         return None         # Success
 
-    proof = client.get_consistency_proof(prev.tree_size, next.tree_size)
+    proof = client.get_consistency_proof(prev.size, next.size)
     if not consistency_proof_valid(prev, next, proof):
-        errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(prev.tree_size,
-                                                                              next.tree_size)
+        errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(prev.size,
+                                                                              next.size)
         errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(
-            prev.tree_size, prev.root_hash, next.tree_size, next.root_hash, proof.path
+            prev.size, prev.root_hash, next.size, next.root_hash, proof.path
         )
         return ERR_CONSISTENCYPROOF_INVALID, errmsg
 
@@ -304,18 +286,18 @@ def numbits(n):
 # Implements the algorithm for consistency proof verification outlined
 # in RFC6962-BIS, see
 # https://datatracker.ietf.org/doc/html/draft-ietf-trans-rfc6962-bis-39#section-2.1.4.2
-def consistency_proof_valid(first, second, proof):
-    assert(first.tree_size == proof.old_size)
-    assert(second.tree_size == proof.new_size)
+def consistency_proof_valid(first, second, proof) -> bool:
+    assert(first.size == proof.old_size)
+    assert(second.size == proof.new_size)
 
     path = proof.path
     if len(path) == 0:
         return False
-    if numbits(first.tree_size) == 1:
+    if numbits(first.size) == 1:
         path = [first.root_hash] + path
 
-    fn = first.tree_size - 1
-    sn = second.tree_size - 1
+    fn = first.size - 1
+    sn = second.size - 1
     while fn & 1:
         fn >>= 1
         sn >>= 1
@@ -343,15 +325,17 @@ def consistency_proof_valid(first, second, proof):
 
 
 def sign_send_store_tree_head(
-    client: sigsum.client.LogClient, signer, log_key, tree_head
+    client: sigsum.client.LogClient, signer, timestamp : int, log_key, tree_head
 ):
-    signature = signer.sign(tree_head.to_signed_data(log_key))
-    hash = sha256(signer.public())
-    cosig = sigsum.tree.Cosignature(hash.digest(), signature)
+    signature = signer.sign(tree_head.to_cosigned_data(
+        timestamp, sha256(log_key.encode()).digest()))
+    cosig = sigsum.tree.Cosignature(sha256(signer.public()).digest(), timestamp, signature)
     try:
         client.add_cosignature(cosig)
     except sigsum.client.LogClientError as err:
         return (ERR_COSIG_POST, f"Unable to post signature to log: {err}")
+
+    LOG_TIMESTAMP.set(timestamp)
     # Store only when all else is done. Next invocation will treat a
     # stored tree head as having been verified.
     store_tree_head(tree_head)
@@ -442,12 +426,7 @@ class Witness(threading.Thread):
         )
         if err:
             return err
-        LOG_TIMESTAMP.set(new_tree_head.timestamp)
-        LOG_TREE_SIZE.set(new_tree_head.tree_size)
-        now = floor(time.time())
-        err = timestamp_valid(new_tree_head, now)
-        if err:
-            return err
+        LOG_TREE_SIZE.set(new_tree_head.size)
         err = history_valid(self.client, new_tree_head, self.cur_tree_head)
         if err:
             # We don't want to count an already signed treehead as an error
@@ -461,8 +440,7 @@ class Witness(threading.Thread):
                 "ERROR: signature of current tree head invalid",
             )
         err = sign_send_store_tree_head(
-            self.client, self.signer, self.log_verification_key, new_tree_head
-        )
+            self.client, self.signer, floor(time.time()), self.log_verification_key, new_tree_head)
         if err:
             return err
         self.cur_tree_head = new_tree_head
@@ -483,7 +461,6 @@ def main():
             level=g_args.log_level,
             )
 
-    now = floor(time.time())
     consistency_verified = False
     ignore_consistency = False
 
@@ -523,10 +500,11 @@ def main():
               "verify that the tree it represents is really a superset of an\n"
               "earlier version of the tree in this log.\n"
               "\nWe are effectively signing this tree head blindly.\n".format(g_args.base_url,
-                                                                              new_tree_head.tree_size))
+                                                                              new_tree_head.size))
         if user_confirm("Really sign head for tree of size {} and upload "
-                        "the signature?".format(new_tree_head.tree_size)):
-            err3 = sign_send_store_tree_head(client, signer, log_verification_key, new_tree_head)
+                        "the signature?".format(new_tree_head.size)):
+            err3 = sign_send_store_tree_head(
+                client, signer, floor(time.time()), log_verification_key, new_tree_head)
             if err3:
                 die(*err3)
 

@@ -11,44 +11,40 @@ from . import ascii
 
 @dataclass
 class TreeHead:
-    timestamp: int
-    tree_size: int
+    size: int
     root_hash: bytes
     signature: bytes
 
     @staticmethod
     def fromascii(data: str) -> "TreeHead":
         lines = data.splitlines()
-        if len(lines) != 4:
+        if len(lines) != 3:
             raise ascii.ASCIIDecodeError(
-                "Expecting four lines for a signed tree head, got " + str(len(lines))
+                "Expecting 3 lines for a signed tree head, got " + str(len(lines))
             )
-        timestamp = ascii.parse_int(lines[0], "timestamp")
-        tree_size = ascii.parse_int(lines[1], "tree_size")
-        root_hash = ascii.parse_hash(lines[2], "root_hash")
-        signature = ascii.parse_signature(lines[3], "signature")
-        return TreeHead(timestamp, tree_size, root_hash, signature)
+        size = ascii.parse_int(lines[0], "size")
+        root_hash = ascii.parse_hash(lines[1], "root_hash")
+        signature = ascii.parse_signature(lines[2], "signature")
+        return TreeHead(size, root_hash, signature)
 
     def ascii(self) -> bytes:
         return ascii.dumps(
             [
-                ("timestamp", self.timestamp),
-                ("tree_size", self.tree_size),
+                ("size", self.size),
                 ("root_hash", self.root_hash),
                 ("signature", self.signature),
             ]
         ).encode("ascii")
 
-    def to_signed_data(self, pubkey):
-        namespace = "tree-head:v0@sigsum.org"
-        msg = struct.pack("!QQ", self.timestamp, self.tree_size)
+    def to_signed_data(self) -> bytes:
+        namespace = "signed-tree-head:v0@sigsum.org"
+        msg = struct.pack("!Q", self.size)
         msg += self.root_hash
-        msg += sha256(pubkey.encode()).digest()
-        assert len(msg) == 8 + 8 + 32 + 32
+        assert len(msg) == 8 + 32
         return ssh_to_sign(namespace, "sha256", sha256(msg).digest())
 
-    def signature_valid(self, pubkey):
-        data = self.to_signed_data(pubkey)
+    def signature_valid(self, pubkey) -> bool:
+        data = self.to_signed_data()
         try:
             verified_data = pubkey.verify(self.signature + data)
         except nacl.exceptions.BadSignatureError:
@@ -56,6 +52,14 @@ class TreeHead:
         assert verified_data == data
         return True
 
+    def to_cosigned_data(self, timestamp : int, log_key_hash : bytes) -> bytes:
+        namespace = "cosigned-tree-head:v0@sigsum.org"
+        msg = struct.pack("!Q", self.size)
+        msg += self.root_hash
+        msg += log_key_hash
+        msg += struct.pack("!Q", timestamp)
+        assert len(msg) == 80
+        return ssh_to_sign(namespace, "sha256", sha256(msg).digest())
 
 @dataclass(frozen=True)
 class ConsistencyProof:
@@ -67,16 +71,17 @@ class ConsistencyProof:
     def fromascii(old_size, new_size, data: str) -> "ConsistencyProof":
         path = []
         for line in data.splitlines():
-            path.append(ascii.parse_hash(line, "consistency_path"))
+            path.append(ascii.parse_hash(line, "node_hash"))
         return ConsistencyProof(old_size, new_size, path)
 
 
 @dataclass(frozen=True)
 class Cosignature:
     keyhash: bytes
+    timestamp: int
     signature: bytes
 
     def ascii(self):
         return ascii.dumps(
-            [("cosignature", f"{self.keyhash.hex()} {self.signature.hex()}")]
+            [("cosignature", f"{self.keyhash.hex()} {self.timestamp} {self.signature.hex()}")]
         ).encode("ascii")

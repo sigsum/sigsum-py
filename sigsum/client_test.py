@@ -26,11 +26,10 @@ def ascii_params_matcher(
 @responses.activate
 def test_get_tree_head_to_cosign():
     responses.get(
-        "https://sigsum.log/get-tree-head-to-cosign",
+        "https://sigsum.log/get-next-tree-head",
         body="\n".join(
             [
-                "timestamp=1000",
-                "tree_size=10",
+                "size=10",
                 "root_hash=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                 "signature=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
             ]
@@ -38,8 +37,7 @@ def test_get_tree_head_to_cosign():
     )
     client = LogClient("https://sigsum.log/")
     tree_head = client.get_tree_head_to_cosign()
-    assert tree_head.timestamp == 1000
-    assert tree_head.tree_size == 10
+    assert tree_head.size == 10
     assert tree_head.root_hash == b"\xCC" * 32
     assert tree_head.signature == b"\xDD" * 64
 
@@ -50,8 +48,8 @@ def test_get_consistency_proof():
         "https://sigsum.log/get-consistency-proof/2/8",
         body="\n".join(
             [
-                "consistency_path=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "consistency_path=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "node_hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "node_hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             ]
         ),
     )
@@ -69,21 +67,21 @@ def test_add_cosignature():
                 [
                     (
                         "cosignature",
-                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 17 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                     )
                 ]
             )
         ],
     )
     client = LogClient("https://sigsum.log/")
-    client.add_cosignature(tree.Cosignature(b"\xAA" * 32, b"\xBB" * 64))
+    client.add_cosignature(tree.Cosignature(b"\xAA" * 32, 17, b"\xBB" * 64))
 
 
 def test_connection_error():
     client = LogClient("https://sigsum.log/")
     with pytest.raises(
         LogClientError,
-        match="GET https://sigsum.log/get-tree-head-to-cosign: connection error",
+        match="GET https://sigsum.log/get-next-tree-head: connection error",
     ):
         client.get_tree_head_to_cosign()
 
@@ -91,12 +89,12 @@ def test_connection_error():
 @responses.activate
 def test_status_error():
     responses.get(
-        "https://sigsum.log/get-tree-head-to-cosign",
+        "https://sigsum.log/get-next-tree-head",
         status=HTTPStatus.INTERNAL_SERVER_ERROR,
     )
     client = LogClient("https://sigsum.log/")
     with pytest.raises(
         LogClientError,
-        match="GET https://sigsum.log/get-tree-head-to-cosign: 500 Internal Server Error",
+        match="GET https://sigsum.log/get-next-tree-head: 500 Internal Server Error",
     ):
         client.get_tree_head_to_cosign()
