@@ -63,17 +63,61 @@ class TreeHead:
 
 @dataclass(frozen=True)
 class ConsistencyProof:
-    old_size: int
-    new_size: int
-    path: typing.Sequence[bytes]
+    path: typing.List[bytes]
 
     @staticmethod
-    def fromascii(old_size, new_size, data: str) -> "ConsistencyProof":
+    def fromascii(data: str) -> "ConsistencyProof":
         path = []
         for line in data.splitlines():
             path.append(ascii.parse_hash(line, "node_hash"))
-        return ConsistencyProof(old_size, new_size, path)
+        return ConsistencyProof(path)
 
+    def proof_valid(self, first : TreeHead, second : TreeHead) -> bool:
+        # First handle trivial cases with empty path.
+        if first.size == second.size:
+            return len(self.path) == 0 and first.root_hash == second.root_hash
+
+        if first.size == 0:
+            return len(self.path) == 0
+
+        # Implements the algorithm for consistency proof verification outlined
+        # in RFC6962-BIS, see
+        # https://datatracker.ietf.org/doc/html/draft-ietf-trans-rfc6962-bis-39#section-2.1.4.2
+        if len(self.path) == 0:
+            return False
+
+        path = self.path
+        # If first size is an exact power of two, prepend first root_hash to the path.
+        assert first.size > 0
+        if first.size & (first.size - 1) == 0:
+            path = [first.root_hash] + path
+
+        fn = first.size - 1
+        sn = second.size - 1
+        while fn & 1:
+            fn >>= 1
+            sn >>= 1
+
+        fr = path[0]
+        sr = path[0]
+
+        for c in path[1:]:
+            if sn == 0:
+                return False
+
+            if fn & 1 or fn == sn:
+                fr = sha256(b'\x01' + c + fr).digest()
+                sr = sha256(b'\x01' + c + sr).digest()
+                while fn != 0 and fn & 1 == 0:
+                    fn >>= 1
+                    sn >>= 1
+            else:
+                sr = sha256(b'\x01' + sr + c).digest()
+
+            fn >>= 1
+            sn >>= 1
+
+        return sn == 0 and fr == first.root_hash and sr == second.root_hash
 
 @dataclass(frozen=True)
 class Cosignature:

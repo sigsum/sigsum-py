@@ -46,7 +46,7 @@ class TestConsistencyProof:
         data = """node_hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 node_hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 """
-        consistency_proof = tree.ConsistencyProof.fromascii(10, 17, data)
+        consistency_proof = tree.ConsistencyProof.fromascii(data)
         assert consistency_proof.path == [
             bytes.fromhex("aa" * 32),
             bytes.fromhex("bb" * 32),
