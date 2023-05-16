@@ -74,7 +74,6 @@ ERR_SIGKEYFILE_MISSING         = 11
 ERR_SIGKEY_FORMAT              = 12
 ERR_NYI                        = 13
 ERR_COSIG_POST                 = 14
-ERR_TREEHEAD_SEEN              = 15
 
 class Parser:
     def __init__(self):
@@ -188,31 +187,13 @@ def history_valid(client: sigsum.client.LogClient, next : sigsum.tree.TreeHead, 
                 "ERROR: Log is shrinking: {} < {} ".format(next.size,
                                                            prev.size))
 
-    if next.root_hash == prev.root_hash and \
-       next.size == prev.size:
-        return (ERR_TREEHEAD_SEEN,
-                "INFO: Fetched head of tree of size {} already seen".format(prev.size))
-
-    if next.root_hash == prev.root_hash and \
-       next.size != prev.size:
-        return (ERR_TREEHEAD_INVALID,
-                "ERROR: Tree size has changed but hash has not: "
-                "{}: {} != {}".format(next.root_hash,
-                                      next.size,
-                                      prev.size))
-
-    if next.root_hash != prev.root_hash and \
-       next.size == prev.size:
-        return (ERR_TREEHEAD_INVALID,
+    if next.size == prev.size:
+        if next.root_hash != prev.root_hash:
+            return (ERR_TREEHEAD_INVALID,
                 "ERROR: Hash has changed but tree size has not: "
                 "{}: {} != {}".format(next.size,
                                       next.root_hash,
                                       prev.root_hash))
-
-    # Same hash and size is ok but there's no
-    # consistency to prove.
-    if next.root_hash == prev.root_hash:
-        assert(next.size == prev.size)
         print("INFO: Signing re-published head of tree of size {}".format(next.size))
         return None         # Success
 
@@ -429,10 +410,6 @@ class Witness(threading.Thread):
         LOG_TREE_SIZE.set(new_tree_head.size)
         err = history_valid(self.client, new_tree_head, self.cur_tree_head)
         if err:
-            # We don't want to count an already signed treehead as an error
-            if err[0] == ERR_TREEHEAD_SEEN:
-                LOGGER.debug(err[1])
-                return
             return err
         if not self.cur_tree_head.signature_valid(self.log_verification_key):
             return (
