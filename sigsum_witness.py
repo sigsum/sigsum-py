@@ -27,6 +27,7 @@ from hashlib import sha256
 from math import floor
 from pathlib import Path, PurePath
 from stat import *
+from flask import Flask
 
 import nacl.encoding
 import nacl.signing
@@ -327,6 +328,11 @@ class WitnessThread(threading.Thread):
         except sigsum.client.LogClientError as err:
             raise WitnessError(ERR_COSIG_POST, f"Unable to post signature to log: {err}")
 
+app = Flask(__name__)
+
+@app.route("/get-tree-size/<key_hash>", methods=["GET"])
+def get_size(key_hash):
+    # XXX
 
 def main():
     global g_args
