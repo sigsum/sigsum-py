@@ -173,45 +173,68 @@ def parse_config(filename):
 def parse_args(argv):
     g_args.parser.parse_args(namespace=g_args)
 
-def parse_keyval(text):
-    dictx = {}
-    for line in text.split():
-        (key, val) = line.split('=')
-        if not key in dictx:
-            dictx[key] = val
-        else:
-            if type(dictx[key]) is list:
-                dictx[key] += [val]
-            else:
-                dictx[key] = [dictx[key], val]
-    return dictx
+class WitnessState:
+    def __init__(self, sth_file_name: str, signer, log_verification_key):
+        self.sth_file_name = sth_file_name
+        self.signer = signer
+        self.log_verification_key = log_verification_key
+        self.cur_tree_head = None
 
-def history_valid(client: sigsum.client.LogClient, next: sigsum.tree.TreeHead, prev: sigsum.tree.TreeHead) -> None:
-    if next.size < prev.size:
-        raise WitnessError(ERR_TREEHEAD_INVALID,
-                "ERROR: Log is shrinking: {} < {} ".format(next.size,
-                                                           prev.size))
+    def init_tree_head(self, bootstrap: bool) -> None:
+        if self.cur_tree_head != None:
+            raise WitnessError(ERR_TREEHEAD_READ,
+                               "ERROR: current tree head already initialized")
+        try:
+            with open(self.sth_file_name, mode='r') as f:
+                if bootstrap:
+                    raise WitnessError(ERR_TREEHEAD_READ,
+                                       "ERROR: tree head file exists, even though bootstrap was requested")
+                tree_head = sigsum.tree.TreeHead.fromascii(f.read())
+                if not tree_head.signature_valid(self.log_verification_key):
+                    raise WitnessError(ERR_TREEHEAD_SIGNATURE_INVALID,
+                                       "ERROR: signature of stored tree head invalid")
+                self.cur_tree_head = tree_head
 
-    if next.size == prev.size:
-        if next.root_hash != prev.root_hash:
-            raise WitnessError(ERR_TREEHEAD_INVALID,
-                "ERROR: Hash has changed but tree size has not: "
-                "{}: {} != {}".format(next.size,
-                                      next.root_hash,
-                                      prev.root_hash))
-        print("INFO: Signing re-published head of tree of size {}".format(next.size))
-        return # Success
+        except sigsum.ascii.ASCIIDecodeError as err:
+            raise WitnessError(ERR_TREEHEAD_READ, f"{filename}: {err}")
+        except FileNotFoundError:
+            if not bootstrap:
+                raise WitnessError(ERR_TREEHEAD_READ,
+                                   "ERROR: unable to read file {}".format(fn))
 
-    proof = client.get_consistency_proof(prev.size, next.size)
-    if not proof.proof_valid(prev, next):
-        errmsg = "ERROR: failing consistency proof check for {}->{}\n".format(prev.size,
-                                                                              next.size)
-        errmsg += "DEBUG: {}:{}->{}:{}\n  {}".format(
-            prev.size, prev.root_hash, next.size, next.root_hash, proof.path
-        )
-        raise WitnessError(ERR_CONSISTENCYPROOF_INVALID, errmsg)
+            self.cur_tree_head = sigsum.tree.TreeHead.make_empty()
 
-    return # Success
+    def store_tree_head(self, tree_head: sigsum.tree.TreeHead):
+        # TODO: Do atomic replace of file contents
+        with open(self.sth_file_name, mode='w+b') as f:
+            f.write(tree_head.ascii())
+        self.cur_tree_head = tree_head
+
+    def cur_size(self) -> int:
+        return self.cur_tree_head.size
+
+    # Check that tree head is properly signed and consistent, then
+    # update state on disk and in memory.
+    def update_tree_head(self, tree_head: sigsum.tree.TreeHead,
+                         proof: sigsum.tree.ConsistencyProof):
+                if not tree_head.signature_valid(self.log_verification_key):
+                    raise WitnessError(ERR_TREEHEAD_SIGNATURE_INVALID,
+                                       "ERROR: signature of new tree head invalid")
+
+                if tree_head.size < self.cur_tree_head.size:
+                    raise WitnessError(ERR_TREEHEAD_INVALID,
+                                       "ERROR: Log is shrinking: {} < {} ".format(
+                                           tree_head.size, self.cur_tree_head.size))
+                if not proof.proof_valid(self.cur_tree_head, tree_head):
+                    raise WitnessError(ERR_CONSISTENCYPROOF_INVALID,
+                                       "ERROR: failing consistency proof check for {}->{}\n".format(
+                                           tree_head.size, self.cur_tree_head.size))
+                self.store_tree_head(tree_head)
+
+    def cosign_tree_head(self, timestamp: int) -> sigsum.tree.Cosignature:
+        signature = self.signer.sign(self.cur_tree_head.to_cosigned_data(
+            timestamp, sha256(self.log_verification_key.encode()).digest()))
+        return sigsum.tree.Cosignature(sha256(self.signer.public()).digest(), timestamp, signature)
 
 def make_base_dir_maybe():
     dirname = os.path.expanduser(g_args.base_dir)
@@ -219,63 +242,6 @@ def make_base_dir_maybe():
         os.stat(dirname)
     except FileNotFoundError:
         os.makedirs(dirname, mode=0o700)
-
-def read_tree_head(filename):
-    try:
-        with open(filename, mode='r') as f:
-            return sigsum.tree.TreeHead.fromascii(f.read())
-    except sigsum.ascii.ASCIIDecodeError as err:
-        die(ERR_TREEHEAD_READ, f"{filename}: {err}")
-    except FileNotFoundError:
-        return None
-
-def read_tree_head_and_verify(log_verification_key) -> sigsum.tree.TreeHead:
-    fn = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed-tree-head'))
-    tree_head = read_tree_head(fn)
-    if not tree_head:
-        raise WitnessError(ERR_TREEHEAD_READ,
-                      "ERROR: unable to read file {}".format(fn))
-
-    if not tree_head.signature_valid(log_verification_key):
-        raise WitnessError(ERR_TREEHEAD_SIGNATURE_INVALID,
-                      "ERROR: signature of stored tree head invalid")
-
-    return tree_head
-
-def store_tree_head(tree_head):
-    path = str(PurePath(os.path.expanduser(g_args.base_dir), 'signed-tree-head'))
-    with open(path, mode='w+b') as f:
-        f.write(tree_head.ascii())
-
-
-def fetch_tree_head_and_verify(client: sigsum.client.LogClient, log_verification_key) -> sigsum.tree.TreeHead:
-    try:
-        tree_head = client.get_tree_head_to_cosign()
-    except sigsum.client.LogClientError as err:
-        raise WitnessError(ERR_TREEHEAD_FETCH, f"unable to fetch new tree head: {err}")
-
-    if not tree_head.signature_valid(log_verification_key):
-        raise WitnessError(ERR_TREEHEAD_SIGNATURE_INVALID,
-                      "ERROR: signature of fetched tree head invalid")
-
-    return tree_head
-
-
-def sign_send_store_tree_head(
-    client: sigsum.client.LogClient, signer, timestamp : int, log_key, tree_head
-) -> None:
-    signature = signer.sign(tree_head.to_cosigned_data(
-        timestamp, sha256(log_key.encode()).digest()))
-    cosig = sigsum.tree.Cosignature(sha256(signer.public()).digest(), timestamp, signature)
-    try:
-        client.add_cosignature(cosig)
-    except sigsum.client.LogClientError as err:
-        raise WitnessError(ERR_COSIG_POST, f"Unable to post signature to log: {err}")
-
-    LOG_TIMESTAMP.set(timestamp)
-    # Store only when all else is done. Next invocation will treat a
-    # stored tree head as having been verified.
-    store_tree_head(tree_head)
 
 def ensure_log_verification_key() -> nacl.signing.VerifyKey:
     if not g_args.log_verification_key:
@@ -326,20 +292,11 @@ def check_keyfile_permission(fp):
         die(ERR_SIGKEYFILE, f"Signing key file {fp} permissions too lax: {perm:04o}.")
 
 
-def user_confirm(prompt):
-    resp = input(prompt + ' y/n> ').lower()
-    if resp and resp[0] == 'y':
-        return True
-    return False
-
-
-class Witness(threading.Thread):
-    def __init__(self, client: sigsum.client.LogClient, signer, log_verification_key, cur_tree_head):
+class WitnessThread(threading.Thread):
+    def __init__(self, client: sigsum.client.LogClient, state: WitnessState):
         super().__init__()
         self.client = client
-        self.signer = signer
-        self.log_verification_key = log_verification_key
-        self.cur_tree_head = cur_tree_head
+        self.state = state
         self.exit = threading.Event()
 
     def run(self):
@@ -357,20 +314,18 @@ class Witness(threading.Thread):
                 LAST_SUCCESS.set_to_current_time()
 
     def sign_once(self):
-        new_tree_head = fetch_tree_head_and_verify(
-            self.client, self.log_verification_key
-        )
+        try:
+            new_tree_head = self.client.get_tree_head_to_cosign()
+        except sigsum.client.LogClientError as err:
+            raise WitnessError(ERR_TREEHEAD_FETCH, f"unable to fetch new tree head: {err}")
+        proof = self.client.get_consistency_proof(self.state.cur_size(), new_tree_head.size)
+        self.state.update_tree_head (new_tree_head, proof)
         LOG_TREE_SIZE.set(new_tree_head.size)
-        # Raises an exception on error
-        history_valid(self.client, new_tree_head, self.cur_tree_head)
-        if not self.cur_tree_head.signature_valid(self.log_verification_key):
-            raise WitnessError(
-                ERR_TREEHEAD_SIGNATURE_INVALID,
-                "ERROR: signature of current tree head invalid",
-            )
-        sign_send_store_tree_head(
-            self.client, self.signer, floor(time.time()), self.log_verification_key, new_tree_head)
-        self.cur_tree_head = new_tree_head
+
+        try:
+            self.client.add_cosignature(self.state.cosign_tree_head(floor(time.time())))
+        except sigsum.client.LogClientError as err:
+            raise WitnessError(ERR_COSIG_POST, f"Unable to post signature to log: {err}")
 
 
 def main():
@@ -413,44 +368,10 @@ def main():
             Path(g_args.base_dir, g_args.sigkey_file), g_args.generate_signing_key
         )
 
+    state = WitnessState(PurePath(os.path.expanduser(g_args.base_dir), 'signed-tree-head'),
+                         signer, log_verification_key)
+    state.init_tree_head(g_args.bootstrap_log)
     client = sigsum.client.LogClient(g_args.base_url)
-
-    try:
-        cur_tree_head = read_tree_head_and_verify(log_verification_key)
-    except WitnessError as err:
-        try:
-            new_tree_head = fetch_tree_head_and_verify(client, log_verification_key)
-        except WitnessError as err2:
-            die(err2.code, err2.msg)
-        except Exception as e:
-            die(ERR_USAGE, str(e))
-
-        if not g_args.bootstrap_log:
-                die(err.code, err.msg)
-
-        print("\nWARNING: We have only seen one single tree head from the\n"
-              "log {},\n"
-              "representing a tree of size {}. We are therefore unable to\n"
-              "verify that the tree it represents is really a superset of an\n"
-              "earlier version of the tree in this log.\n"
-              "\nWe are effectively signing this tree head blindly.\n".format(g_args.base_url,
-                                                                              new_tree_head.size))
-        if user_confirm("Really sign head for tree of size {} and upload "
-                        "the signature?".format(new_tree_head.size)):
-            try:
-                sign_send_store_tree_head(
-                    client, signer, floor(time.time()), log_verification_key, new_tree_head)
-            except WitnessError as err3:
-                die(err3.code, er3.msg)
-            except Exception as e:
-                die(ERR_USAGE, str(e))
-
-        return
-    except Exception as e:
-        die(ERR_USAGE, str(e))
-
-    if g_args.bootstrap_log:
-        die(ERR_USAGE, "Valid tree head found: --bootstrap-log not allowed")
 
     # Start up the server to expose the metrics.
     LOGGER.info(f"Starting metrics server on port {g_args.metrics_port}")
@@ -458,7 +379,7 @@ def main():
 
     LOGGER.info("Starting witness")
     LOGGER.info(f"Public key: {signer.public().hex()}")
-    thread = Witness(client, signer, log_verification_key, cur_tree_head)
+    thread = WitnessThread(client, state)
     if g_args.once:
         try:
             thread.sign_once()

@@ -27,6 +27,11 @@ class TreeHead:
         signature = ascii.parse_signature(lines[2], "signature")
         return TreeHead(size, root_hash, signature)
 
+    # Return an empty tree, without signature
+    @staticmethod
+    def make_empty() -> "TreeHead":
+        return TreeHead(0, sha256(b"").digest(), b"")
+
     def ascii(self) -> bytes:
         return ascii.dumps(
             [
@@ -80,6 +85,7 @@ class ConsistencyProof:
         if first.size == 0:
             return len(self.path) == 0
 
+        assert first.size < second.size
         # Implements the algorithm for consistency proof verification outlined
         # in RFC6962-BIS, see
         # https://datatracker.ietf.org/doc/html/draft-ietf-trans-rfc6962-bis-39#section-2.1.4.2
