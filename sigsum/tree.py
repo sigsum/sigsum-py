@@ -57,6 +57,7 @@ class TreeHead:
         assert verified_data == data
         return True
 
+    # TODO: XXX Update to new serialization.
     def to_cosigned_data(self, timestamp : int, log_key_hash : bytes) -> bytes:
         namespace = "cosigned-tree-head:v0@sigsum.org"
         msg = struct.pack("!Q", self.size)
@@ -157,5 +158,5 @@ class AddTreeHeadRequest:
         key_hash = ascii.parse_hash(lines[0], "key_hash")
         tree_head = TreeHead.from_lines(lines[1:4])
         old_size = ascii.parse_int(lines[4], "old_size")
-        proof = ConsisistencyProof.from_lines(lines[5:])
+        proof = ConsistencyProof.from_lines(lines[5:])
         return AddTreeHeadRequest(key_hash, tree_head, old_size, proof)
