@@ -17,7 +17,10 @@ class TreeHead:
 
     @staticmethod
     def fromascii(data: str) -> "TreeHead":
-        lines = data.splitlines()
+        return TreeHead.from_lines(data.splitlines())
+
+    @staticmethod
+    def from_lines(lines: typing.List[str]) -> "TreeHead":
         if len(lines) != 3:
             raise ascii.ASCIIDecodeError(
                 "Expecting 3 lines for a signed tree head, got " + str(len(lines))
@@ -69,8 +72,12 @@ class ConsistencyProof:
 
     @staticmethod
     def fromascii(data: str) -> "ConsistencyProof":
+        return ConsistencyProof.from_lines(data.splitlines())
+
+    @staticmethod
+    def from_lines(lines: typing.List[str]) -> "ConsistencyProof":
         path = []
-        for line in data.splitlines():
+        for line in lines:
             path.append(ascii.parse_hash(line, "node_hash"))
         return ConsistencyProof(path)
 
@@ -132,3 +139,23 @@ class Cosignature:
         return ascii.dumps(
             [("cosignature", f"{self.keyhash.hex()} {self.timestamp} {self.signature.hex()}")]
         ).encode("ascii")
+
+@dataclass(frozen=True)
+class AddTreeHeadRequest:
+    key_hash: bytes
+    tree_head: TreeHead
+    old_size: int
+    proof: ConsistencyProof
+
+    @staticmethod
+    def fromascii(data: str) -> "AddTreeHeadRequest":
+        lines = data.splitlines()
+        if len(lines) < 5:
+            raise ascii.ASCIIDecodeError(
+                f"Expecting >= 5 lines for an add tree head request, got {len(lines)}"
+            )
+        key_hash = ascii.parse_hash(lines[0], "key_hash")
+        tree_head = TreeHead.from_lines(lines[1:4])
+        old_size = ascii.parse_int(lines[4], "old_size")
+        proof = ConsisistencyProof.from_lines(lines[5:])
+        return AddTreeHeadRequest(key_hash, tree_head, old_size, proof)
