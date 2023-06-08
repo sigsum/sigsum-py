@@ -82,7 +82,7 @@ wait_tree_head 2
 # Always start witnessing with no previous state
 rm -f signed-tree-head
 
-yes | ../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --bootstrap-log -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -i 5 -v
+../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --once --bootstrap-log -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -i 5 -v
 wait_cosigned_tree_head 2
 
 add_leaf 3
