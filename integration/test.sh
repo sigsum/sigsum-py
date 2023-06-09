@@ -6,28 +6,29 @@ set -e
 cd $(dirname "$(realpath "$0")")
 
 # Install sigsum tools, in a local directory
-GOBIN="$(pwd)"/bin go install sigsum.org/log-go/cmd/...@v0.8.0
-# log-go@v0.8.0 depends on 0.1.18, but we need newer tools. But it seems 0.1.24 is too new
-GOBIN="$(pwd)"/bin go install sigsum.org/sigsum-go/cmd/...@v0.1.21
+GOBIN="$(pwd)"/bin go install sigsum.org/log-go/cmd/...@v0.12.0
+GOBIN="$(pwd)"/bin go install sigsum.org/sigsum-go/cmd/...@v0.3.4
 
 ./bin/sigsum-key gen -o tmp.log-key
 ./bin/sigsum-key gen -o tmp.submit-key
 
-(umask 077 && ./bin/sigsum-debug key private > tmp.witness-key.private)
-cat tmp.witness-key.private | ./bin/sigsum-debug key public > tmp.witness-key.public # hex format
-cat tmp.witness-key.public | ./bin/sigsum-key hex-to-pub $(cat tmp.witness-key.public) > tmp.witness-key.pub # ssh format
+./bin/sigsum-key gen -o tmp.witness-key
+
+echo "witness W $(./bin/sigsum-key hex -k tmp.witness-key.pub) http://localhost:5000" > tmp.policy
+echo "quorum W" >> tmp.policy
 
 # Start sigsum log server
-rm -f tmp.log-sth
-./bin/sigsum-mktree --key tmp.log-key --sth-path tmp.log-sth
+rm -f tmp.log-sth tmp.log-sth.startup tmp.log-server.log
+./bin/sigsum-mktree --sth-file tmp.log-sth
 ./bin/sigsum-log-primary \
-    --key tmp.log-key --witnesses tmp.witness-key.pub \
-    --interval=3s --log-level=debug --ephemeral-test-backend --sth-path tmp.log-sth /dev/null &
+    --key-file tmp.log-key --policy-file tmp.policy \
+    --interval=1s --log-level=debug --log-file=tmp.log-server.log --backend=ephemeral --sth-file tmp.log-sth &
 
 SIGSUM_PID=$!
+WITNESS_PID=
 
 function cleanup () {
-    kill ${SIGSUM_PID}
+    kill ${SIGSUM_PID} ${WITNESS_PID}
 }
 
 trap cleanup EXIT
@@ -52,7 +53,7 @@ function add_leaf () {
 function wait_tree_head() {
     local i
     for i in $(seq 20) ; do
-	if curl -sS http://localhost:6965/get-next-tree-head |tee tmp.next-tree-head | grep "^size=$1"'$' >/dev/null ; then
+	if curl -sS http://localhost:6965/get-tree-head |tee tmp.get-tree-head | grep "^size=$1"'$' >/dev/null ; then
 	    return 0
 	fi
 	sleep 1
@@ -64,8 +65,8 @@ function wait_tree_head() {
 function wait_cosigned_tree_head() {
     local i
     for i in $(seq 20) ; do
-	if curl -sS http://localhost:6965/get-tree-head | tee tmp.tree-head | grep "^size=$1"'$' >/dev/null ; then
-	    return 0
+	if curl -sS http://localhost:6965/get-tree-head | tee tmp.get-tree-head | grep "^size=$1"'$' >/dev/null ; then
+	    grep cosignature= tmp.get-tree-head >/dev/null && return 0
 	fi
 	sleep 1
     done
@@ -82,14 +83,19 @@ wait_tree_head 2
 # Always start witnessing with no previous state
 rm -f signed-tree-head
 
-../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --once --bootstrap-log -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -i 5 -v
+# Use <(...) trick to start in background, under ssh-agent.
+read WITNESS_PID < <(ssh-agent sh <<EOF
+ssh-add tmp.witness-key
+echo \$\$
+# By default, listens on localhost (IPv4 only), port 5000
+exec ../sigsum_witness.py -d $(pwd) --ssh-agent --bootstrap-log -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -v >tmp.witness.log 2>&1
+EOF
+)
+
 wait_cosigned_tree_head 2
 
 add_leaf 3
 add_leaf 4
-wait_tree_head 4
-
-../sigsum_witness.py -u http://localhost:6965/ -d $(pwd) --once -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -v
 wait_cosigned_tree_head 4
 
 exit 0

@@ -27,6 +27,7 @@ from hashlib import sha256
 from math import floor
 from pathlib import Path, PurePath
 from stat import *
+import flask
 
 import nacl.encoding
 import nacl.signing
@@ -83,16 +84,12 @@ class WitnessError(Exception):
 class Parser:
     def __init__(self):
         p = argparse.ArgumentParser(
-            description='Sign the most recently published tree head from a given sigsum log, after verifying it against an older tree.')
+            description='Witness a given sigsum log, verifying and cosigning tree heads provided by the log.')
 
         p.add_argument('--bootstrap-log',
                        action='store_true',
                        help="Sign and save fetched tree head without verifying a consistency proof against a previous tree head. "
                        "NOTE: Requires user intervention.")
-
-        p.add_argument("--once",
-                       action='store_true',
-                       help="Verify and cosign the most recent tree head, and then exit.")
 
         p.add_argument('-d', '--base-dir',
                        default=CONFIG_DIR_DEFAULT,
@@ -122,22 +119,6 @@ class Parser:
         )
 
         p.add_argument(
-            "-u",
-            "--base-url",
-            default=BASE_URL_DEFAULT,
-            help="Log base URL ({})".format(BASE_URL_DEFAULT),
-        )
-
-        p.add_argument(
-            "-i",
-            "--interval",
-            action="store",
-            type=int,
-            default=30,
-            help="Interval between signing attempt, in seconds (30)",
-        )
-
-        p.add_argument(
             "-v",
             "--verbose",
             action="store_const",
@@ -148,12 +129,26 @@ class Parser:
         )
 
         p.add_argument(
-            "-p",
             "--metrics-port",
             action="store",
             type=int,
             default=8000,
             help="Port of the HTTP server to expose Prometheus metrics.",
+        )
+
+        p.add_argument(
+            "--listen-address",
+            action="store",
+            default="localhost",
+            help="Address to listen on",
+        )
+
+        p.add_argument(
+            "--listen-port",
+            action="store",
+            type=int,
+            default=5000,
+            help="Port to listen to.",
         )
 
         self.parser = p
@@ -178,6 +173,7 @@ class WitnessState:
         self.sth_file_name = sth_file_name
         self.signer = signer
         self.log_verification_key = log_verification_key
+        self.log_key_hash = sha256(log_verification_key.encode()).digest()
         self.cur_tree_head = None
 
     def init_tree_head(self, bootstrap: bool) -> None:
@@ -200,7 +196,7 @@ class WitnessState:
         except FileNotFoundError:
             if not bootstrap:
                 raise WitnessError(ERR_TREEHEAD_READ,
-                                   "ERROR: unable to read file {}".format(fn))
+                                   "ERROR: unable to read file {}".format(self.sth_file_name))
 
             self.cur_tree_head = sigsum.tree.TreeHead.make_empty()
 
@@ -217,23 +213,23 @@ class WitnessState:
     # update state on disk and in memory.
     def update_tree_head(self, tree_head: sigsum.tree.TreeHead,
                          proof: sigsum.tree.ConsistencyProof):
-                if not tree_head.signature_valid(self.log_verification_key):
-                    raise WitnessError(ERR_TREEHEAD_SIGNATURE_INVALID,
-                                       "ERROR: signature of new tree head invalid")
+        if not tree_head.signature_valid(self.log_verification_key):
+            raise WitnessError(ERR_TREEHEAD_SIGNATURE_INVALID,
+                               "ERROR: signature of new tree head invalid")
 
-                if tree_head.size < self.cur_tree_head.size:
-                    raise WitnessError(ERR_TREEHEAD_INVALID,
-                                       "ERROR: Log is shrinking: {} < {} ".format(
-                                           tree_head.size, self.cur_tree_head.size))
-                if not proof.proof_valid(self.cur_tree_head, tree_head):
-                    raise WitnessError(ERR_CONSISTENCYPROOF_INVALID,
-                                       "ERROR: failing consistency proof check for {}->{}\n".format(
-                                           tree_head.size, self.cur_tree_head.size))
-                self.store_tree_head(tree_head)
+        if tree_head.size < self.cur_tree_head.size:
+            raise WitnessError(ERR_TREEHEAD_INVALID,
+                               "ERROR: Log is shrinking: {} < {} ".format(
+                                   tree_head.size, self.cur_tree_head.size))
+        if not proof.proof_valid(self.cur_tree_head, tree_head):
+            raise WitnessError(ERR_CONSISTENCYPROOF_INVALID,
+                               "ERROR: failing consistency proof check for {}->{}\n".format(
+                                   tree_head.size, self.cur_tree_head.size))
+        self.store_tree_head(tree_head)
 
     def cosign_tree_head(self, timestamp: int) -> sigsum.tree.Cosignature:
         signature = self.signer.sign(self.cur_tree_head.to_cosigned_data(
-            timestamp, sha256(self.log_verification_key.encode()).digest()))
+            self.log_key_hash, timestamp))
         return sigsum.tree.Cosignature(sha256(self.signer.public()).digest(), timestamp, signature)
 
 def make_base_dir_maybe():
@@ -292,44 +288,54 @@ def check_keyfile_permission(fp):
         die(ERR_SIGKEYFILE, f"Signing key file {fp} permissions too lax: {perm:04o}.")
 
 
-class WitnessThread(threading.Thread):
-    def __init__(self, client: sigsum.client.LogClient, state: WitnessState):
-        super().__init__()
-        self.client = client
-        self.state = state
-        self.exit = threading.Event()
+app = flask.Flask(__name__)
 
-    def run(self):
-        while not self.exit.wait(g_args.interval):
-            SIGNING_ATTEMPTS.inc()
-            try:
-                err = self.sign_once()
-            except WitnessError as e:
-                LOGGER.error(e.msg)
-                SIGNING_ERROR.inc()
-            except Exception as e:
-                LOGGER.exception(e)
-                SIGNING_ERROR.inc()
-            else:
-                LAST_SUCCESS.set_to_current_time()
+g_state_lock = threading.Lock()
+g_state = None
 
-    def sign_once(self):
+@app.route("/get-tree-size/<key_hash>", methods=["GET"])
+def get_tree_size(key_hash):
+    global g_state, g_state_lock
+    with g_state_lock:
         try:
-            new_tree_head = self.client.get_tree_head_to_cosign()
-        except sigsum.client.LogClientError as err:
-            raise WitnessError(ERR_TREEHEAD_FETCH, f"unable to fetch new tree head: {err}")
-        proof = self.client.get_consistency_proof(self.state.cur_size(), new_tree_head.size)
-        self.state.update_tree_head (new_tree_head, proof)
-        LOG_TREE_SIZE.set(new_tree_head.size)
+            if bytes.fromhex(key_hash) != g_state.log_key_hash:
+                return flask.make_response("unknown log", 403)
+        except Exception as e:
+            return flask.make_response("invalid request: " + str(e), 400)
+        return f"size={g_state.cur_size()}\n"
 
+@app.route("/add-tree-head", methods=["POST"])
+def add_tree_head():
+    global g_state, g_state_lock
+    if flask.request.content_length > 10000:
+        return flask.make_response("request too large", 400)
+    data = flask.request.get_data()
+    try:
+        add_tree_head = sigsum.tree.AddTreeHeadRequest.fromascii(data.decode("ascii"))
+    except Exception as e:
+        return flask.make_response("invalid request: " + str(e), 400)
+
+    with g_state_lock:
+        if add_tree_head.key_hash != g_state.log_key_hash:
+            return flask.make_response("unknown log", 403)
+        if add_tree_head.old_size != g_state.cur_size():
+            return flask.make_response("bad old size, expected: {}".format(g_state.cur_size()), 409)
         try:
-            self.client.add_cosignature(self.state.cosign_tree_head(floor(time.time())))
-        except sigsum.client.LogClientError as err:
-            raise WitnessError(ERR_COSIG_POST, f"Unable to post signature to log: {err}")
+            g_state.update_tree_head(add_tree_head.tree_head, add_tree_head.proof)
+        except WitnessError as e:
+            if e.code == ERR_CONSISTENCYPROOF_INVALID:
+                return flask.make_response("not consistent: " + e.msg, 422)
+            return flask.make_response(e.msg, 403)
 
+        cs = g_state.cosign_tree_head(floor(time.time()))
+        return flask.make_response(cs.ascii())
+
+def set_content_type(resp: flask.Response) -> flask.Response:
+    resp.headers["content-type"] = "text/plain"
+    return resp
 
 def main():
-    global g_args
+    global g_args, g_state, app
     g_args = Parser()
     args = sys.argv
     parse_args(args)            # get base_dir
@@ -368,10 +374,12 @@ def main():
             Path(g_args.base_dir, g_args.sigkey_file), g_args.generate_signing_key
         )
 
-    state = WitnessState(PurePath(os.path.expanduser(g_args.base_dir), 'signed-tree-head'),
+    g_state = WitnessState(PurePath(os.path.expanduser(g_args.base_dir), 'signed-tree-head'),
                          signer, log_verification_key)
-    state.init_tree_head(g_args.bootstrap_log)
-    client = sigsum.client.LogClient(g_args.base_url)
+    try:
+        g_state.init_tree_head(g_args.bootstrap_log)
+    except WitnessError as e:
+        die(e.code, e.msg)
 
     # Start up the server to expose the metrics.
     LOGGER.info(f"Starting metrics server on port {g_args.metrics_port}")
@@ -379,22 +387,8 @@ def main():
 
     LOGGER.info("Starting witness")
     LOGGER.info(f"Public key: {signer.public().hex()}")
-    thread = WitnessThread(client, state)
-    if g_args.once:
-        try:
-            thread.sign_once()
-        except WitnessError as e:
-            die(e.code, e.msg)
-        except Exception as e:
-            die(ERR_USAGE, str(e))
-    else:
-        thread.start()
-        try:
-            time.sleep(100000)
-        except KeyboardInterrupt:
-            thread.exit.set()
-            thread.join()
-
+    app.after_request(set_content_type)
+    app.run(host=g_args.listen_address, port=g_args.listen_port)
 
 def die(code, msg=None):
     if msg:

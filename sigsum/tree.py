@@ -2,9 +2,9 @@ import struct
 import typing
 from dataclasses import dataclass
 from hashlib import sha256
+from base64 import b64encode
 
 import nacl.exceptions
-from tools.libsigntools import ssh_to_sign
 
 from . import ascii
 
@@ -17,7 +17,10 @@ class TreeHead:
 
     @staticmethod
     def fromascii(data: str) -> "TreeHead":
-        lines = data.splitlines()
+        return TreeHead.from_lines(data.splitlines())
+
+    @staticmethod
+    def from_lines(lines: typing.List[str]) -> "TreeHead":
         if len(lines) != 3:
             raise ascii.ASCIIDecodeError(
                 "Expecting 3 lines for a signed tree head, got " + str(len(lines))
@@ -41,15 +44,12 @@ class TreeHead:
             ]
         ).encode("ascii")
 
-    def to_signed_data(self) -> bytes:
-        namespace = "signed-tree-head:v0@sigsum.org"
-        msg = struct.pack("!Q", self.size)
-        msg += self.root_hash
-        assert len(msg) == 8 + 32
-        return ssh_to_sign(namespace, "sha256", sha256(msg).digest())
+    def to_signed_data(self, key_hash : bytes) -> bytes:
+        return (f"sigsum.org/v1/tree/{key_hash.hex()}\n{self.size}\n".encode("ascii")
+                + b64encode(self.root_hash) + b"\n")
 
-    def signature_valid(self, pubkey) -> bool:
-        data = self.to_signed_data()
+    def signature_valid(self, pubkey):
+        data = self.to_signed_data(sha256(pubkey.encode()).digest())
         try:
             verified_data = pubkey.verify(self.signature + data)
         except nacl.exceptions.BadSignatureError:
@@ -57,14 +57,10 @@ class TreeHead:
         assert verified_data == data
         return True
 
-    def to_cosigned_data(self, timestamp : int, log_key_hash : bytes) -> bytes:
-        namespace = "cosigned-tree-head:v0@sigsum.org"
-        msg = struct.pack("!Q", self.size)
-        msg += self.root_hash
-        msg += log_key_hash
-        msg += struct.pack("!Q", timestamp)
-        assert len(msg) == 80
-        return ssh_to_sign(namespace, "sha256", sha256(msg).digest())
+    def to_cosigned_data(self, log_key_hash: bytes, timestamp: int) -> bytes:
+        namespace = "cosignature/v1"
+        return ("{}\ntime {}\n".format(namespace, timestamp).encode("ascii")
+                + self.to_signed_data(log_key_hash))
 
 @dataclass(frozen=True)
 class ConsistencyProof:
@@ -72,8 +68,12 @@ class ConsistencyProof:
 
     @staticmethod
     def fromascii(data: str) -> "ConsistencyProof":
+        return ConsistencyProof.from_lines(data.splitlines())
+
+    @staticmethod
+    def from_lines(lines: typing.List[str]) -> "ConsistencyProof":
         path = []
-        for line in data.splitlines():
+        for line in lines:
             path.append(ascii.parse_hash(line, "node_hash"))
         return ConsistencyProof(path)
 
@@ -135,3 +135,25 @@ class Cosignature:
         return ascii.dumps(
             [("cosignature", f"{self.keyhash.hex()} {self.timestamp} {self.signature.hex()}")]
         ).encode("ascii")
+
+@dataclass(frozen=True)
+class AddTreeHeadRequest:
+    key_hash: bytes
+    tree_head: TreeHead
+    old_size: int
+    proof: ConsistencyProof
+
+    @staticmethod
+    def fromascii(data: str) -> "AddTreeHeadRequest":
+        lines = data.splitlines()
+        if len(lines) < 5:
+            raise ascii.ASCIIDecodeError(
+                f"Expecting >= 5 lines for an add tree head request, got {len(lines)}"
+            )
+        key_hash = ascii.parse_hash(lines[0], "key_hash")
+        tree_head = TreeHead.from_lines(lines[1:4])
+        old_size = ascii.parse_int(lines[4], "old_size")
+        proof = ConsistencyProof.from_lines(lines[5:])
+        if old_size > tree_head.size:
+            raise ascii.ASCIIDecodeError("invalid, old_size ({}) > size ({})".format(old_size, tree_head.size))
+        return AddTreeHeadRequest(key_hash, tree_head, old_size, proof)
