@@ -154,4 +154,6 @@ class AddTreeHeadRequest:
         tree_head = TreeHead.from_lines(lines[1:4])
         old_size = ascii.parse_int(lines[4], "old_size")
         proof = ConsistencyProof.from_lines(lines[5:])
+        if old_size > tree_head.size:
+            raise ascii.ASCIIDecodeError("invalid, old_size ({}) > size ({})".format(old_size, tree_head.size))
         return AddTreeHeadRequest(key_hash, tree_head, old_size, proof)

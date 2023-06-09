@@ -229,7 +229,7 @@ class WitnessState:
 
     def cosign_tree_head(self, timestamp: int) -> sigsum.tree.Cosignature:
         signature = self.signer.sign(self.cur_tree_head.to_cosigned_data(
-            timestamp, self.log_key_hash))
+            self.log_key_hash, timestamp))
         return sigsum.tree.Cosignature(sha256(self.signer.public()).digest(), timestamp, signature)
 
 def make_base_dir_maybe():
@@ -300,19 +300,42 @@ def get_tree_size(key_hash):
         try:
             if bytes.fromhex(key_hash) != g_state.log_key_hash:
                 return flask.make_response("unknown log", 403)
-        except:
-            return flask.make_response("invalid hex keyhash", 400)
+        except Exception as e:
+            return flask.make_response("invalid request: " + str(e), 400)
         return f"size={g_state.cur_size()}\n"
 
 @app.route("/add-tree-head", methods=["POST"])
 def add_tree_head():
-    if request.content_length > 10000:
+    global g_state, g_state_lock
+    if flask.request.content_length > 10000:
         return flask.make_response("request too large", 400)
-    data = request.get_date()
-    return flask.make_response("add-tree-head not yet implemented", 500)
+    data = flask.request.get_data()
+    try:
+        add_tree_head = sigsum.tree.AddTreeHeadRequest.fromascii(data.decode("ascii"))
+    except Exception as e:
+        return flask.make_response("invalid request: " + str(e), 400)
+
+    with g_state_lock:
+        if add_tree_head.key_hash != g_state.log_key_hash:
+            return flask.make_response("unknown log", 403)
+        if add_tree_head.old_size != g_state.cur_size():
+            return flask.make_response("bad old size, expected: {}".format(g_state.cur_size()), 409)
+        try:
+            g_state.update_tree_head(add_tree_head.tree_head, add_tree_head.proof)
+        except WitnessError as e:
+            if e.code == ERR_CONSISTENCYPROOF_INVALID:
+                return flask.make_response("not consistent: " + e.msg, 422)
+            return flask.make_response(e.msg, 403)
+
+        cs = g_state.cosign_tree_head(floor(time.time()))
+        return flask.make_response(cs.ascii())
+
+def set_content_type(resp: flask.Response) -> flask.Response:
+    resp.headers["content-type"] = "text/plain"
+    return resp
 
 def main():
-    global g_args, g_state
+    global g_args, g_state, app
     g_args = Parser()
     args = sys.argv
     parse_args(args)            # get base_dir
@@ -364,6 +387,7 @@ def main():
 
     LOGGER.info("Starting witness")
     LOGGER.info(f"Public key: {signer.public().hex()}")
+    app.after_request(set_content_type)
     app.run(host=g_args.listen_address, port=g_args.listen_port)
 
 def die(code, msg=None):
