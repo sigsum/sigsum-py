@@ -57,15 +57,10 @@ class TreeHead:
         assert verified_data == data
         return True
 
-    # TODO: XXX Update to new serialization.
-    def to_cosigned_data(self, timestamp : int, log_key_hash : bytes) -> bytes:
-        namespace = "cosigned-tree-head:v0@sigsum.org"
-        msg = struct.pack("!Q", self.size)
-        msg += self.root_hash
-        msg += log_key_hash
-        msg += struct.pack("!Q", timestamp)
-        assert len(msg) == 80
-        return ssh_to_sign(namespace, "sha256", sha256(msg).digest())
+    def to_cosigned_data(self, log_key_hash: bytes, timestamp: int) -> bytes:
+        namespace = "cosignature/v1"
+        return ("{}\ntime {}\n".format(namespace, timestamp).encode("ascii")
+                + self.to_signed_data(log_key_hash))
 
 @dataclass(frozen=True)
 class ConsistencyProof:

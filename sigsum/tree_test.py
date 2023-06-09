@@ -48,6 +48,17 @@ signature=c60e5151b9d0f0efaf57022c0ec306c0f0275afef69333cc89df4fda328c87949fcfa4
         tree_head.size = tree_head.size + 1
         assert not tree_head.signature_valid(pub_key)
 
+    def test_to_cosigned_data(self):
+        sth = tree.TreeHead(10, bytes.fromhex("cc" * 32), bytes.fromhex("dd" * 64))
+        key_hash = bytes.fromhex("ee" * 32)
+        timestamp = 1234567
+        assert sth.to_cosigned_data(key_hash, timestamp) == b"""cosignature/v1
+time 1234567
+sigsum.org/v1/tree/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+10
+zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMw=
+"""
+
 class TestConsistencyProof:
     def test_fromascii(self):
         data = """node_hash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
