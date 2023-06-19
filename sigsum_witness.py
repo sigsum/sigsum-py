@@ -287,6 +287,11 @@ def check_keyfile_permission(fp):
     if perm & 0o077 != 0:
         die(ERR_SIGKEYFILE, f"Signing key file {fp} permissions too lax: {perm:04o}.")
 
+def user_confirm(prompt):
+    resp = input(prompt + ' y/n> ').lower()
+    if resp and resp[0] == 'y':
+        return True
+    return False
 
 app = flask.Flask(__name__)
 
