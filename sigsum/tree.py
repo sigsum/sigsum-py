@@ -133,7 +133,7 @@ class Cosignature:
 
     def ascii(self):
         return ascii.dumps(
-            [("cosignature", f"{self.keyhash.hex()} {self.timestamp} {self.signature.hex()}")]
+            [("cosignature", f"v1 {self.keyhash.hex()} {self.timestamp} {self.signature.hex()}")]
         ).encode("ascii")
 
 @dataclass(frozen=True)
