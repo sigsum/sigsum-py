@@ -1,5 +1,5 @@
 ---
-image: python:3.10-bullseye
+image: python:3.11.4-bookworm
 
 before_script:
 - apt-get update -qq && apt-get install -y -qq ssh
