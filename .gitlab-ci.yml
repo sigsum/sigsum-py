@@ -1,12 +1,26 @@
 ---
 image: python:3.11.4-bookworm
 
-before_script:
-- apt-get update -qq && apt-get install -y -qq ssh
+stages:
+- test
+- integration
 
-tests:
-  script:
-  - pip install poetry==1.4.2
-  - poetry install
-  - poetry run mypy sigsum
-  - poetry run pytest --cov
+before_script:
+- apt-get update -qq && apt-get install -y -qq ssh golang-go
+- pip install poetry==1.4.2
+- poetry install
+
+mypy:
+  stage: test
+  script: poetry run mypy sigsum
+
+pytest:
+  stage: test
+  script: poetry run pytest --cov
+
+log-integration-test:
+  stage: integration
+  script: ./integration/test.sh
+  artifacts:
+    paths:
+    - ./integration/*.log
