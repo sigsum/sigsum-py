@@ -6,8 +6,8 @@ set -e
 cd $(dirname "$(realpath "$0")")
 
 # Install sigsum tools, in a local directory
-GOBIN="$(pwd)"/bin go install sigsum.org/log-go/cmd/...@v0.12.0
-GOBIN="$(pwd)"/bin go install sigsum.org/sigsum-go/cmd/...@v0.3.4
+GOBIN="$(pwd)"/bin go install sigsum.org/log-go/cmd/...@v0.13.0
+GOBIN="$(pwd)"/bin go install sigsum.org/sigsum-go/cmd/...@v0.4.0
 
 ./bin/sigsum-key gen -o tmp.log-key
 ./bin/sigsum-key gen -o tmp.submit-key
