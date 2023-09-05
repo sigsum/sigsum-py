@@ -5,6 +5,19 @@ set -e
 # Go to the directory this scripts lives in
 cd $(dirname "$(realpath "$0")")
 
+# Maybe start sigsum_submit.py via poetry.
+#
+# If POETRY_RUN is explicitly set in the environment, use that.
+# Otherwise, set to "poetry run" if poetry is available and there is
+# no active python venv.
+
+# Set POETRY_RUN="poetry run", unless it , or a python venv is active.
+if [[ ! -v POETRY_RUN ]] ; then
+    POETRY_RUN=""
+    type poetry >/dev/null && [[ -z "$VIRTUAL_ENV" ]] && \
+	POETRY_RUN="poetry run"
+fi
+
 # Install sigsum tools, in a local directory
 GOBIN="$(pwd)"/bin go install sigsum.org/log-go/cmd/...@v0.13.0
 GOBIN="$(pwd)"/bin go install sigsum.org/sigsum-go/cmd/...@v0.4.0
@@ -88,7 +101,7 @@ read WITNESS_PID < <(ssh-agent sh <<EOF
 ssh-add tmp.witness-key
 echo \$\$
 # By default, listens on localhost (IPv4 only), port 5000
-exec ../sigsum_witness.py -d $(pwd) --ssh-agent --bootstrap-log -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -v >tmp.witness.log 2>&1
+exec $POETRY_RUN ../sigsum_witness.py -d $(pwd) --ssh-agent --bootstrap-log -s tmp.witness-key.private -l $(./bin/sigsum-key hex -k tmp.log-key.pub) -v >tmp.witness.log 2>&1
 EOF
 )
 
