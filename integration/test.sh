@@ -19,7 +19,7 @@ if [[ ! -v POETRY_RUN ]] ; then
 fi
 
 # Install sigsum tools, in a local directory
-GOBIN="$(pwd)"/bin go install sigsum.org/log-go/cmd/...@v0.13.0
+GOBIN="$(pwd)"/bin go install sigsum.org/log-go/cmd/...@v0.14.0
 GOBIN="$(pwd)"/bin go install sigsum.org/sigsum-go/cmd/...@v0.4.0
 
 ./bin/sigsum-key gen -o tmp.log-key
