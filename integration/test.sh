@@ -14,7 +14,7 @@ cd $(dirname "$(realpath "$0")")
 # Set POETRY_RUN="poetry run", unless it , or a python venv is active.
 if [[ ! -v POETRY_RUN ]] ; then
     POETRY_RUN=""
-    type poetry >/dev/null && [[ -z "$VIRTUAL_ENV" ]] && \
+    type poetry >/dev/null 2>&1 && [[ -z "$VIRTUAL_ENV" ]] && \
 	POETRY_RUN="poetry run"
 fi
 
